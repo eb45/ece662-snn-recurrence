@@ -1,0 +1,9 @@
+logs/
+*.out
+*.err
+__pycache__/
+*.pyc
+snn_env/
+wandb/
+*.npz
+*.tar.gz
