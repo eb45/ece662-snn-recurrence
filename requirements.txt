@@ -1,0 +1,5 @@
+numpy==1.26.4
+spikingjelly==2.0.0
+torch==2.6.0+cu124
+torchaudio==2.6.0+cu124
+torchvision==0.21.0+cu124

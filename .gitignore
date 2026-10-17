@@ -7,3 +7,4 @@ snn_env/
 wandb/
 *.npz
 *.tar.gz
+.ipynb_checkpoints/
