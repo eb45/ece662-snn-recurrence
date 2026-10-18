@@ -1,0 +1,22 @@
+{
+  "best_test_acc": 0.9409722222222222,
+  "params": 1698926,
+  "lif_neurons_per_step": 2794094,
+  "args": {
+    "root": "/work/eb408/dvs128_gesture",
+    "out": "/work/eb408/ece662_runs/control_s2026",
+    "epochs": 64,
+    "batch_size": 8,
+    "accum": 2,
+    "T": 16,
+    "channels": 128,
+    "opt": "adam",
+    "lr": 0.001,
+    "loss": "mse",
+    "seed": 2026,
+    "num_workers": 4,
+    "no_amp": false,
+    "cupy": false,
+    "no_resume": false
+  }
+}
