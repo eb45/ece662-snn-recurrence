@@ -222,8 +222,10 @@ gap statement promises. The LSM remains the classical baseline from the kickoff.
    move away from its starting value.
 4. If the loss goes NaN or test accuracy collapses: `CLIP_GRAD=1.0`, then a
    smaller `REC_GAIN` (0.25), then `REC_LAYERS="fc"`, in that order.
-5. The sbatch uses Emma's virtualenv and `/work/eb408` paths. Check you can
-   read and write them, or override `DATA_ROOT` / `OUT`.
+5. The sbatch reads data from and writes runs to `/work/$USER` by default. Set
+   `CONDA_ENV=<name>` to use your own conda env (otherwise it sources Emma's
+   virtualenv, or `VENV=<path>`), and override `DATA_ROOT` / `OUT` to use
+   someone else's dataset copy or output folder.
 
 ## Open questions for the team
 

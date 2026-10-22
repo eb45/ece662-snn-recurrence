@@ -16,6 +16,10 @@
 # Random recurrence: FREEZE_REC=1 sbatch train_recurrent.sbatch
 # Late readout:     READOUT=late sbatch train_recurrent.sbatch
 #
+# Python env: CONDA_ENV=<name> activates a conda env; otherwise VENV=<path> (default:
+# Emma's shared virtualenv) is sourced. Data and outputs default to /work/$USER.
+#   CONDA_ENV=snn sbatch train_recurrent.sbatch
+#
 # If the job is preempted it requeues and train_recurrent.py resumes from
 # <OUT>/checkpoint.pt, so keep RUN_NAME the same across restarts.
 
@@ -37,14 +41,20 @@ TAG="rec_${REC_LAYERS// /_}"
 [ "$READOUT" = "late" ] && TAG="${TAG}_late"
 RUN_NAME="${RUN_NAME:-${TAG}_s${SEED}}"
 
-DATA_ROOT="${DATA_ROOT:-/work/eb408/dvs128_gesture}"
-OUT="${OUT:-/work/eb408/ece662_runs/${RUN_NAME}}"
+DATA_ROOT="${DATA_ROOT:-/work/${USER}/dvs128_gesture}"
+OUT="${OUT:-/work/${USER}/ece662_runs/${RUN_NAME}}"
 
 EXTRA=()
 [ "$FREEZE_REC" = "1" ] && EXTRA+=(--freeze-rec)
 
 cd "$SLURM_SUBMIT_DIR" || exit 1
-source /hpc/group/naderilab/eb408/peft_proteomics/peft_proteomics_env/bin/activate
+if [ -n "${CONDA_ENV:-}" ]; then
+  # sbatch inherits PATH from the submitting shell, so conda is found if it works there.
+  source "$(conda info --base)/etc/profile.d/conda.sh" || { echo "conda not found"; exit 1; }
+  conda activate "$CONDA_ENV" || exit 1
+else
+  source "${VENV:-/hpc/group/naderilab/eb408/peft_proteomics/peft_proteomics_env}/bin/activate" || exit 1
+fi
 
 mkdir -p logs "$OUT"
 nvidia-smi
