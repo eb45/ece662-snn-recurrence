@@ -15,6 +15,7 @@ Status: written and reviewed by reading, **not yet run**. Run the tests and a
 | `train_recurrent.py` | Training script. Same loop as `train_control.py` plus recurrence/readout flags |
 | `train_recurrent.sbatch` | DCC launcher. Variants are picked with environment variables |
 | `tests/test_recurrent.py` | CPU unit tests, including "zero recurrence == control" |
+| `probe_recurrent.py` | Firing rates, spikes per clip, and recurrent-vs-feed-forward drive for trained runs |
 
 No shared file was changed. `dvs_data.py`, `models.py`, and `evaluate.py` are
 imported as-is.
@@ -127,6 +128,21 @@ python train_recurrent.py --root /path/to/dvs128_gesture --out runs/rec_conv5_fc
 | `--readout` | `mean` | `mean` = average over all steps (control). `late` = last `--late-k` steps only |
 | `--late-k` | `4` | Steps used by the late readout |
 | `--clip-grad` | `0` (off) | Gradient-norm clipping. If used, use it for every arm |
+| `--rec-lr` | same as `--lr` | Learning rate for `W_rec` only |
+| `--rec-wd` | `0` (off) | Decoupled (AdamW-style) weight decay on `W_rec` only |
+
+sbatch equivalents: `REC_LAYERS`, `REC_INIT`, `REC_GAIN`, `FREEZE_REC=1`,
+`READOUT`, `LATE_K`, `CLIP_GRAD`, `REC_LR`, `REC_WD`. The default run name
+encodes every non-default setting (e.g. `rec_fc_zero_wd1.0_s2026`), so variants
+never share an output folder or resume each other's checkpoint.
+
+The optimizer is `AdamW`. With `weight_decay=0`, which applies to every
+non-recurrent weight, it is exactly Adam, as in the control. Only `W_rec`
+can get decay. AdamW's decay shrinks weights by `lr × wd` per step,
+independent of Adam's gradient scaling. With about 4,700 steps and a cosine
+schedule, `wd = 0.1` shrinks an unused weight to about 80%, and `wd = 1.0` to
+about 10%. So useful values are larger than the 1e-4-style L2 values used with
+plain Adam.
 
 ### Outputs
 
@@ -153,6 +169,45 @@ acc = evaluate(model, test_loader, device, transform=lambda x: insert_gap(x, sta
 `load_run` returns the model wrapped in `LateReadout` if it was trained with
 `--readout late`, so it is scored the way it was trained. It needs
 `final.json`, which is written when training finishes.
+
+### Diagnostics: `probe_recurrent.py`
+
+```bash
+python probe_recurrent.py --root /hpc/home/ah670/dvs128_gesture \
+    --runs /work/ah670/ece662_runs/rec_fc_s2026 /work/ah670/ece662_runs/rec_conv5_fc_frozen_s2026
+```
+
+For each run, on the test split, it reports:
+
+- **Accuracy** of `best.pt`. This should match `best_test_acc`, give or take a
+  clip because of mixed precision, which also confirms loading works.
+- **Firing rate per spiking layer** (`conv1`–`conv5`, `fc`, `out`).
+- **Spikes per clip**, per layer and in total.
+- **`rec/ff`** for each recurrent layer: the RMS of `W_rec·s_{t-1}` divided by
+  the RMS of the feed-forward input. Near 0 means recurrence is barely used;
+  around 1 or more means the layer is driven as much by its own past spikes as
+  by the input.
+
+Results are also saved to `<run>/probe.json`. Runs without `rec_layers` in
+`final.json` are loaded as the control, so the control can be probed for
+comparison.
+
+## Results so far (seed 2026, mean readout, 288 test clips)
+
+| Run | Train acc | Test best / final | `|W_rec|` start → end |
+|---|---|---|---|
+| Control (`models.CSNN`) | ~100% | 94.1 / 92.4 | – |
+| conv5+fc, frozen random | 99.9% | 93.8 / 92.4 | fixed (5.7, 11.3) |
+| fc, learned | 99.6% | 89.2 / 88.2 | 11.3 → 31.7 |
+| conv5+fc, learned, zero init | 99.7% | 88.2 / 87.2 | 0 → (19.2, 27.8) |
+| conv5+fc, learned | 99.7% | 86.5 / 85.1 | (5.7, 11.3) → (19.1, 29.4) |
+| conv5+fc, learned, clip 1.0 | – | 86.5 / 85.1 (identical: clipping never triggered) | same |
+
+**Reading.** Learned recurrence fits the training people as well as the control,
+but generalizes 5–8 points worse to unseen people, and more of it overfits more.
+`W_rec` grows 2.5–3.5× and nothing counteracts that growth. Random fixed recurrence
+costs nothing. Next: `--rec-wd` / `--rec-lr` to regularize `W_rec`, and
+`probe_recurrent.py` to measure how much each layer relies on recurrence.
 
 ## Differences
 

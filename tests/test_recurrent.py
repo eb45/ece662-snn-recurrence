@@ -19,6 +19,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 import train_recurrent
 from models import CSNN
+from probe_recurrent import probe
 from recurrent_model import LateReadout, RecurrentCSNN, RecurrentLIF, load_run
 
 SMALL = dict(channels=4, hidden=16)
@@ -48,14 +49,18 @@ class RecurrentModelTests(unittest.TestCase):
     def test_zero_recurrence_matches_control(self):
         # With W_rec = 0 the recurrent net must compute exactly what CSNN does.
         # This checks the per-step loop, the layer swap, and the step modes.
+        # Train mode (BN uses batch stats) with dropout off: in eval mode a
+        # freshly initialized 4-channel net goes silent by block 5, which
+        # would make the comparison vacuous.
         torch.manual_seed(0)
-        ctrl = CSNN(**SMALL).eval()
-        rnet = RecurrentCSNN(rec_layers=("conv1", "conv5", "fc"), rec_init="zero", **SMALL).eval()
+        ctrl = CSNN(dropout=0.0, **SMALL).train()
+        rnet = RecurrentCSNN(rec_layers=("conv1", "conv5", "fc"), rec_init="zero",
+                             dropout=0.0, **SMALL).train()
         missing, unexpected = rnet.load_state_dict(ctrl.state_dict(), strict=False)
         self.assertEqual(unexpected, [])
         self.assertTrue(missing and all(k.endswith("rec.weight") for k in missing))
 
-        x = _frames(T=4)
+        x = _frames(T=4, B=4)
         with torch.no_grad():
             feats_c = ctrl.conv_stack(x)
             functional.reset_net(ctrl)
@@ -142,23 +147,24 @@ class RecurrentTrainingTests(unittest.TestCase):
         loader = DataLoader(TensorDataset(frames.transpose(0, 1), labels), batch_size=2,
                             shuffle=False, collate_fn=_time_first_collate)
 
-        def make_args(output_dir, epochs, readout="mean"):
+        def make_args(output_dir, epochs, readout, rec_lr, rec_wd):
             return Namespace(
                 root="unused", out=output_dir, epochs=epochs, batch_size=2, accum=1, T=2,
                 channels=4, opt="adam", lr=1e-3, loss="mse", seed=17, num_workers=0,
                 no_amp=True, no_resume=False, rec_layers=["conv5", "fc"],
                 rec_init="orthogonal", rec_gain=0.5, freeze_rec=False,
-                readout=readout, late_k=1, clip_grad=1.0,
+                readout=readout, late_k=1, clip_grad=1.0, rec_lr=rec_lr, rec_wd=rec_wd,
             )
 
-        for readout in ("mean", "late"):
+        # Second config also exercises the separate W_rec optimizer group across a resume.
+        for readout, rec_lr, rec_wd in (("mean", None, 0.0), ("late", 1e-4, 0.5)):
             with self.subTest(readout=readout), tempfile.TemporaryDirectory() as out_dir:
                 with patch.object(train_recurrent, "get_loaders", return_value=(loader, loader)):
                     with patch.object(train_recurrent, "parse_args",
-                                      return_value=make_args(out_dir, 1, readout)):
+                                      return_value=make_args(out_dir, 1, readout, rec_lr, rec_wd)):
                         train_recurrent.main()
                     with patch.object(train_recurrent, "parse_args",
-                                      return_value=make_args(out_dir, 2, readout)):
+                                      return_value=make_args(out_dir, 2, readout, rec_lr, rec_wd)):
                         train_recurrent.main()
 
                 with open(os.path.join(out_dir, "metrics.jsonl")) as f:
@@ -174,6 +180,66 @@ class RecurrentTrainingTests(unittest.TestCase):
                 # checkpoint.pt always exists (best.pt only once test acc > 0).
                 model = load_run(out_dir, which="checkpoint.pt")
                 self.assertIsInstance(model, LateReadout if readout == "late" else RecurrentCSNN)
+
+
+def _opt_args(rec_lr=None, rec_wd=0.0, opt="adam"):
+    return Namespace(opt=opt, lr=1e-3, rec_lr=rec_lr, rec_wd=rec_wd)
+
+
+class OptimizerTests(unittest.TestCase):
+    def test_default_is_one_group_without_decay(self):
+        net = RecurrentCSNN(**SMALL)
+        opt, trainable = train_recurrent.build_optimizer(net, _opt_args())
+        self.assertEqual(len(opt.param_groups), 1)
+        self.assertEqual(opt.param_groups[0]["weight_decay"], 0.0)
+        self.assertEqual(len(trainable), len(list(net.parameters())))
+
+    def test_rec_group_gets_own_lr_and_decay(self):
+        net = RecurrentCSNN(**SMALL)
+        opt, _ = train_recurrent.build_optimizer(net, _opt_args(rec_lr=1e-4, rec_wd=0.1))
+        base, rec = opt.param_groups
+        rec_weights = {id(m.rec.weight) for m in net.rec_modules().values()}
+        self.assertEqual({id(p) for p in rec["params"]}, rec_weights)
+        self.assertFalse(rec_weights & {id(p) for p in base["params"]})
+        self.assertEqual((rec["lr"], rec["weight_decay"]), (1e-4, 0.1))
+        self.assertEqual((base["lr"], base["weight_decay"]), (1e-3, 0.0))
+
+    def test_decay_shrinks_only_w_rec(self):
+        # With zero gradients Adam's update is zero, so only the decoupled decay
+        # acts: W_rec scales by (1 - lr * wd) and every other weight stays put.
+        net = RecurrentCSNN(**SMALL)
+        opt, trainable = train_recurrent.build_optimizer(net, _opt_args(rec_wd=0.5))
+        before = {id(p): p.detach().clone() for p in trainable}
+        for p in trainable:
+            p.grad = torch.zeros_like(p)
+        opt.step()
+        rec_weights = {id(m.rec.weight) for m in net.rec_modules().values()}
+        for p in trainable:
+            expected = before[id(p)] * (1 - 1e-3 * 0.5) if id(p) in rec_weights else before[id(p)]
+            torch.testing.assert_close(p.detach(), expected)
+
+    def test_frozen_ignores_rec_settings(self):
+        net = RecurrentCSNN(freeze_rec=True, **SMALL)
+        opt, _ = train_recurrent.build_optimizer(net, _opt_args(rec_lr=1e-4, rec_wd=0.1))
+        self.assertEqual(len(opt.param_groups), 1)
+
+
+class ProbeTests(unittest.TestCase):
+    def test_probe_reports_every_layer_and_removes_hooks(self):
+        net = RecurrentCSNN(**SMALL)
+        loader = [(_frames(T=3, B=2, seed=s), torch.tensor([1, 4])) for s in range(2)]
+        for model in (net, LateReadout(net, 2)):
+            res = probe(model, loader, torch.device("cpu"))
+            self.assertEqual(res["clips"], 4)
+            self.assertTrue(0.0 <= res["accuracy"] <= 1.0)
+            self.assertEqual(set(res["layers"]),
+                             {"conv1", "conv2", "conv3", "conv4", "conv5", "fc", "out"})
+            for label, row in res["layers"].items():
+                self.assertTrue(0.0 <= row["firing_rate"] <= 1.0, label)
+                self.assertEqual("rec_to_ff" in row, label in ("conv5", "fc"), label)
+            self.assertAlmostEqual(res["spikes_per_clip"],
+                                   sum(r["spikes_per_clip"] for r in res["layers"].values()))
+            self.assertFalse(any(m._forward_hooks or m._forward_pre_hooks for m in net.modules()))
 
 
 if __name__ == "__main__":

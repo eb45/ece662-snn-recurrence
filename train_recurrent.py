@@ -17,6 +17,9 @@ Random fixed recurrence (same network, W_rec frozen at its random init):
 Late readout (score only the last k steps; for the memory experiments):
     python train_recurrent.py --root ... --out .../rec_conv5_fc_late_s2026 --readout late --late-k 4
 
+Regularize W_rec (learned recurrence overfits the training people otherwise):
+    python train_recurrent.py --root ... --out .../rec_fc_wd1_s2026 --rec-layers fc --rec-wd 1.0
+
 Checkpoints are written every epoch and the script resumes automatically
 if <out>/checkpoint.pt exists, so a preempted scavenger job can requeue and
 carry on.
@@ -69,7 +72,40 @@ def parse_args():
     p.add_argument("--late-k", type=int, default=4)
     p.add_argument("--clip-grad", type=float, default=0.0,
                    help="Max grad norm; 0 disables (control does not clip)")
+    p.add_argument("--rec-lr", type=float, default=None,
+                   help="Learning rate for W_rec only (default: same as --lr)")
+    p.add_argument("--rec-wd", type=float, default=0.0,
+                   help="Decoupled (AdamW-style) weight decay on W_rec only; 0 disables")
     return p.parse_args()
+
+
+def build_optimizer(net, args):
+    """Optimizer as in the control; W_rec can get its own lr and weight decay.
+
+    Returns (optimizer, trainable params) so the caller can clip the same params.
+    """
+    trainable = [p for p in net.parameters() if p.requires_grad]
+    rec_ids = {id(m.rec.weight) for m in net.rec_modules().values()}
+    rec_trainable = [p for p in trainable if id(p) in rec_ids]
+    if rec_trainable and (args.rec_lr is not None or args.rec_wd > 0):
+        # Everything except W_rec is optimized exactly as in the control (no decay).
+        groups = [
+            {"params": [p for p in trainable if id(p) not in rec_ids], "weight_decay": 0.0},
+            {"params": rec_trainable, "lr": args.rec_lr or args.lr, "weight_decay": args.rec_wd},
+        ]
+        print(f"W_rec optimizer group: lr={args.rec_lr or args.lr}, weight_decay={args.rec_wd}")
+    else:
+        groups = [{"params": trainable, "weight_decay": 0.0}]
+        if args.rec_lr is not None or args.rec_wd > 0:
+            print("WARNING: --rec-lr/--rec-wd ignored because W_rec is frozen")
+    if args.opt == "adam":
+        # AdamW with weight_decay=0 is exactly Adam, so the non-recurrent weights
+        # train as in the control. The W_rec decay is decoupled from Adam's
+        # per-parameter scaling (plain Adam L2 decay would be scaled away).
+        opt = torch.optim.AdamW(groups, lr=args.lr)
+    else:
+        opt = torch.optim.SGD(groups, lr=args.lr, momentum=0.9)
+    return opt, trainable
 
 
 def save_atomic(obj, path):
@@ -111,12 +147,8 @@ def main():
           f"T={args.T}, amp={use_amp}, opt={args.opt}, lr={args.lr}, loss={args.loss}, "
           f"clip={args.clip_grad or 'off'}")
 
-    trainable = [p for p in net.parameters() if p.requires_grad]
-    if args.opt == "adam":
-        opt = torch.optim.Adam(trainable, lr=args.lr)
-    else:
-        opt = torch.optim.SGD(trainable, lr=args.lr, momentum=0.9)
-    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
+    opt, trainable = build_optimizer(net, args)
+    sched =torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
     ckpt_path = os.path.join(args.out, "checkpoint.pt")
