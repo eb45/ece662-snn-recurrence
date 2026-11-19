@@ -1,11 +1,15 @@
 """
-Train the feed-forward SNN control on DVS128 Gesture.
+Train the feed-forward SNN control on DVS128 Gesture (default) or an extra
+dataset from datasets_extra.py (--dataset dvsgc).
 
 Quick debug run (2 epochs) to check shapes, memory, and time per epoch:
     python train_control.py --root /work/eb408/dvs128_gesture --out /work/eb408/ece662_runs/debug --epochs 2
 
 Full run:
     python train_control.py --root /work/eb408/dvs128_gesture --out /work/eb408/ece662_runs/control_s42 --epochs 64
+
+DVS-Gesture-Chain debug run (--root is still the DVS128 Gesture root):
+    python train_control.py --dataset dvsgc --root /work/eb408/dvs128_gesture --out /work/eb408/ece662_runs/dvsgc_debug --epochs 2
 
 Checkpoints are written every epoch and the script resumes automatically
 if <out>/checkpoint.pt exists, so a preempted scavenger job can requeue and
@@ -21,14 +25,17 @@ import torch
 import torch.nn.functional as F
 from spikingjelly.activation_based import functional, neuron
 
-from dvs_data import DEFAULT_CONFIG, get_loaders, set_seed
+from datasets_extra import DATASETS, DVSGC_DEFAULTS, get_dataset_loaders
+from dvs_data import DEFAULT_CONFIG, set_seed
 from evaluate import evaluate
 from models import CSNN
 
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--root", required=True, help="DVS128 Gesture root (contains download/)")
+    p.add_argument("--dataset", choices=sorted(DATASETS), default="dvs128")
+    p.add_argument("--root", required=True,
+                   help="DVS128 Gesture root (contains download/). dvsgc is built from it too.")
     p.add_argument("--out", required=True, help="Output folder for checkpoints and metrics")
     p.add_argument("--epochs", type=int, default=64)
     p.add_argument("--batch-size", type=int, default=8,
@@ -46,6 +53,9 @@ def parse_args():
     p.add_argument("--no-amp", action="store_true", help="Disable mixed precision")
     p.add_argument("--cupy", action="store_true", help="Use the cupy LIF backend (needs cupy installed)")
     p.add_argument("--no-resume", action="store_true")
+    # DVS-Gesture-Chain options (ignored for dvs128)
+    p.add_argument("--seq-len", type=int, default=DVSGC_DEFAULTS["seq_len"])
+    p.add_argument("--class-num", type=int, default=DVSGC_DEFAULTS["class_num"])
     return p.parse_args()
 
 
@@ -65,16 +75,23 @@ def main():
         print("WARNING: no GPU found, training will be very slow")
     use_amp = (not args.no_amp) and device.type == "cuda"
 
-    train_loader, test_loader = get_loaders(
-        args.root, batch_size=args.batch_size, T=args.T,
-        num_workers=args.num_workers, seed=args.seed,
+    dataset_kwargs = {}
+    if args.dataset == "dvsgc":
+        dataset_kwargs = dict(seq_len=args.seq_len, class_num=args.class_num)
+    train_loader, test_loader, info = get_dataset_loaders(
+        args.dataset, args.root, batch_size=args.batch_size, T=args.T,
+        num_workers=args.num_workers, seed=args.seed, **dataset_kwargs,
     )
+    num_classes = info["num_classes"]
+    in_channels, input_size, _ = info["frame_shape"]
 
-    model = CSNN(channels=args.channels, num_classes=DEFAULT_CONFIG["num_classes"]).to(device)
+    model = CSNN(channels=args.channels, num_classes=num_classes,
+                 in_channels=in_channels, input_size=input_size).to(device)
     if args.cupy:
         functional.set_backend(model, "cupy", instance=neuron.LIFNode)
 
     n_params, n_lif = model.num_params(), model.num_lif_neurons()
+    print(f"dataset: {args.dataset}   classes: {num_classes}   chance: {1 / num_classes:.4f}")
     print(f"params: {n_params:,}   LIF neurons per step: {n_lif:,}")
     print(f"batch {args.batch_size} x accum {args.accum} = effective {args.batch_size * args.accum}, "
           f"T={args.T}, amp={use_amp}, opt={args.opt}, lr={args.lr}, loss={args.loss}")
@@ -99,8 +116,6 @@ def main():
         scaler.load_state_dict(ck["scaler"])
         start_epoch, best_acc = ck["epoch"] + 1, ck["best_acc"]
         print(f"Resumed from epoch {start_epoch} (best test acc so far {best_acc:.4f})")
-
-    num_classes = DEFAULT_CONFIG["num_classes"]
 
     for epoch in range(start_epoch, args.epochs):
         model.train()
@@ -166,7 +181,8 @@ def main():
         }, ckpt_path)
 
     with open(os.path.join(args.out, "final.json"), "w") as f:
-        json.dump({"best_test_acc": best_acc, "params": n_params,
+        json.dump({"best_test_acc": best_acc, "dataset": args.dataset,
+                   "num_classes": num_classes, "params": n_params,
                    "lif_neurons_per_step": n_lif, "args": vars(args)}, f, indent=2)
     print(f"Done. Best test accuracy: {best_acc:.4f}")
 
