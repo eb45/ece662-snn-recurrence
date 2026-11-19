@@ -43,6 +43,7 @@ DEFAULT_CONFIG = {
     "num_workers": 4,
     "seed": 2026,
     "num_classes": 11,
+    "frame_shape": (2, 128, 128),  # per-step input shape (C, H, W)
 }
 
 
@@ -88,16 +89,13 @@ class _TimeFirst:
         return frames.transpose(0, 1).contiguous().float(), labels
 
 
-def get_loaders(root: str,
-                batch_size: int = DEFAULT_CONFIG["batch_size"],
-                T: int = DEFAULT_CONFIG["T"],
-                num_workers: int = DEFAULT_CONFIG["num_workers"],
-                seed: int = DEFAULT_CONFIG["seed"],
-                split_by: str = DEFAULT_CONFIG["split_by"]):
-    """Return (train_loader, test_loader). Batches are ([T,B,2,128,128], [B])."""
-    set_seed(seed)
-    train_set, test_set = get_datasets(root, T=T, split_by=split_by)
-
+def make_loaders(train_set, test_set,
+                 batch_size: int = DEFAULT_CONFIG["batch_size"],
+                 num_workers: int = DEFAULT_CONFIG["num_workers"],
+                 seed: int = DEFAULT_CONFIG["seed"]):
+    """Wrap any (train_set, test_set) of (frames [T, ...], label) items in the
+    shared time-first loaders. Used by get_loaders and by datasets_extra.py.
+    """
     g = torch.Generator()
     g.manual_seed(seed)
 
@@ -117,6 +115,30 @@ def get_loaders(root: str,
     return train_loader, test_loader
 
 
+def get_loaders(root: str,
+                batch_size: int = DEFAULT_CONFIG["batch_size"],
+                T: int = DEFAULT_CONFIG["T"],
+                num_workers: int = DEFAULT_CONFIG["num_workers"],
+                seed: int = DEFAULT_CONFIG["seed"],
+                split_by: str = DEFAULT_CONFIG["split_by"]):
+    """Return (train_loader, test_loader). Batches are ([T,B,2,128,128], [B])."""
+    set_seed(seed)
+    train_set, test_set = get_datasets(root, T=T, split_by=split_by)
+    return make_loaders(train_set, test_set, batch_size=batch_size,
+                        num_workers=num_workers, seed=seed)
+
+
+def check_batch(frames, labels, T: int, batch_size: int,
+                num_classes: int = DEFAULT_CONFIG["num_classes"],
+                frame_shape: tuple = DEFAULT_CONFIG["frame_shape"]) -> None:
+    """Assert a time-first batch has shape [T, B, *frame_shape] and labels in range."""
+    expected = (T, batch_size, *frame_shape)
+    assert tuple(frames.shape) == expected, \
+        f"unexpected frame shape {tuple(frames.shape)}, expected {expected}"
+    assert labels.shape == (batch_size,), f"unexpected label shape {tuple(labels.shape)}"
+    assert labels.min() >= 0 and labels.max() < num_classes, "bad labels"
+
+
 def sanity_check(root: str, T: int = DEFAULT_CONFIG["T"], batch_size: int = 4) -> None:
     """Build the cache (first run) and check shapes, labels, and split sizes."""
     train_set, test_set = get_datasets(root, T=T)
@@ -129,8 +151,7 @@ def sanity_check(root: str, T: int = DEFAULT_CONFIG["T"], batch_size: int = 4) -
     print(f"frame dtype: {frames.dtype}   min: {frames.min().item():.1f}   "
           f"max: {frames.max().item():.1f}   mean: {frames.mean().item():.4f}")
 
-    assert frames.shape == (T, batch_size, 2, 128, 128), "unexpected frame shape"
-    assert labels.min() >= 0 and labels.max() < DEFAULT_CONFIG["num_classes"], "bad labels"
+    check_batch(frames, labels, T=T, batch_size=batch_size)
     print("OK")
 
 
