@@ -16,11 +16,11 @@
 
 DATASET="${DATASET:-dvsgc}"
 T="${T:-16}"
-CONDA_ENV="${CONDA_ENV:-rapids}"
+VENV="${VENV:-/hpc/group/naderilab/eb408/peft_proteomics/peft_proteomics_env}"
 DATA_ROOT="${DATA_ROOT:-/work/eb408/dvs128_gesture}"
 
 cd "$SLURM_SUBMIT_DIR" || exit 1
-eval "$(conda shell.bash hook)" && conda activate "$CONDA_ENV" || { echo "could not activate conda env $CONDA_ENV"; exit 1; }
+source "$VENV/bin/activate" || { echo "could not activate $VENV"; exit 1; }
 
 mkdir -p logs
 echo "dataset: $DATASET  T: $T  root: $DATA_ROOT"

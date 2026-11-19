@@ -11,7 +11,7 @@
 #SBATCH --requeue
 
 # Feed-forward control on an extra dataset (copy of train_control.sbatch that
-# runs in the rapids conda env and passes --dataset through).
+# runs in the same venv and passes --dataset through).
 #
 # Debug run:   DATASET=dvsgc EPOCHS=2 RUN_NAME=dvsgc_debug sbatch --time=01:00:00 train_extra.sbatch
 # Short run:   DATASET=dvsgc EPOCHS=20 RUN_NAME=dvsgc_ff_s2026 sbatch train_extra.sbatch
@@ -28,13 +28,13 @@ T="${T:-16}"
 RUN_NAME="${RUN_NAME:-${DATASET}_ff_s${SEED}}"
 BATCH_SIZE="${BATCH_SIZE:-8}"
 ACCUM="${ACCUM:-2}"
-CONDA_ENV="${CONDA_ENV:-rapids}"
+VENV="${VENV:-/hpc/group/naderilab/eb408/peft_proteomics/peft_proteomics_env}"
 
 DATA_ROOT="${DATA_ROOT:-/work/eb408/dvs128_gesture}"
 OUT="${OUT:-/work/eb408/ece662_runs/${RUN_NAME}}"
 
 cd "$SLURM_SUBMIT_DIR" || exit 1
-eval "$(conda shell.bash hook)" && conda activate "$CONDA_ENV" || { echo "could not activate conda env $CONDA_ENV"; exit 1; }
+source "$VENV/bin/activate" || { echo "could not activate $VENV"; exit 1; }
 
 mkdir -p logs "$OUT"
 nvidia-smi
