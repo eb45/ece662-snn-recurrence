@@ -252,5 +252,42 @@ class TrainControlDatasetFlagTests(unittest.TestCase):
         self.assertEqual(final["dataset"], "dvsgc")
 
 
+class EvalShuffleTests(unittest.TestCase):
+    def test_end_to_end_on_tiny_run(self):
+        import eval_shuffle
+        import train_control
+
+        tr = _FakeClips(4, T=3, num_classes=81)
+        te = _FakeClips(4, T=3, num_classes=81, seed=1)
+        info = dict(num_classes=81, frame_shape=(2, 128, 128), cache_root=None)
+
+        def fake_loaders(*a, **kw):
+            return (*dvs_data.make_loaders(tr, te, batch_size=2, num_workers=0), info)
+
+        with tempfile.TemporaryDirectory() as out:
+            argv = ["train_control.py", "--dataset", "dvsgc", "--root", "/data", "--out", out,
+                    "--epochs", "1", "--batch-size", "2", "--accum", "1", "--T", "3",
+                    "--channels", "4", "--num-workers", "0"]
+            with patch.object(sys, "argv", argv), \
+                    patch("train_control.get_dataset_loaders", side_effect=fake_loaders), \
+                    patch("builtins.print"):
+                train_control.main()
+
+            with patch("eval_shuffle.get_dataset_loaders", side_effect=fake_loaders) as gdl, \
+                    patch("builtins.print"):
+                result = eval_shuffle.main(["--run", out, "--seeds", "0", "1", "--num-workers", "0"])
+
+            self.assertEqual(gdl.call_args.args[:2], ("dvsgc", "/data"))
+            self.assertEqual(gdl.call_args.kwargs["T"], 3)
+            self.assertEqual((gdl.call_args.kwargs["seq_len"], gdl.call_args.kwargs["class_num"]), (4, 3))
+            with open(os.path.join(out, "shuffle.json")) as f:
+                saved = json.load(f)
+        self.assertEqual(saved, json.loads(json.dumps(result)))
+        self.assertEqual(len(saved["shuffled_acc"]), 2)
+        self.assertAlmostEqual(saved["chance"], 1 / 81)
+        self.assertAlmostEqual(saved["drop_abs"], saved["clean_acc"] - saved["shuffled_mean"])
+        self.assertTrue(0.0 <= saved["clean_acc"] <= 1.0)
+
+
 if __name__ == "__main__":
     unittest.main()
