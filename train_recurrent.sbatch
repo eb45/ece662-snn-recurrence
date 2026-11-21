@@ -16,6 +16,8 @@
 # Random recurrence: FREEZE_REC=1 sbatch train_recurrent.sbatch
 # Late readout:     READOUT=late sbatch train_recurrent.sbatch
 # Regularize W_rec: REC_LAYERS="fc" REC_WD=1.0 sbatch train_recurrent.sbatch   (also REC_LR=1e-4)
+# Anchored decay:   REC_LAYERS="fc" REC_WD=1.0 REC_ANCHOR=1 sbatch train_recurrent.sbatch  (decay toward W0)
+# Whole grid:       bash sweep_recurrent.sh poc   (see that file)
 #
 # Python env: CONDA_ENV=<name> activates a conda env; otherwise VENV=<path> (default:
 # Emma's shared virtualenv) is sourced. Data and outputs default to /work/$USER.
@@ -37,6 +39,7 @@ LATE_K="${LATE_K:-4}"
 CLIP_GRAD="${CLIP_GRAD:-0}"
 REC_LR="${REC_LR:-}"
 REC_WD="${REC_WD:-0}"
+REC_ANCHOR="${REC_ANCHOR:-0}"
 
 # Default run name encodes every non-default setting, e.g. rec_fc_zero_wd1.0_s2026,
 # so two variants never share an output folder (and a checkpoint).
@@ -48,6 +51,7 @@ TAG="rec_${REC_LAYERS// /_}"
 [ "$CLIP_GRAD" != "0" ] && TAG="${TAG}_clip${CLIP_GRAD}"
 [ -n "$REC_LR" ] && TAG="${TAG}_rlr${REC_LR}"
 [ "$REC_WD" != "0" ] && TAG="${TAG}_wd${REC_WD}"
+[ "$REC_ANCHOR" = "1" ] && TAG="${TAG}_anchor"
 RUN_NAME="${RUN_NAME:-${TAG}_s${SEED}}"
 
 DATA_ROOT="${DATA_ROOT:-/work/${USER}/dvs128_gesture}"
@@ -56,6 +60,7 @@ OUT="${OUT:-/work/${USER}/ece662_runs/${RUN_NAME}}"
 EXTRA=()
 [ "$FREEZE_REC" = "1" ] && EXTRA+=(--freeze-rec)
 [ -n "$REC_LR" ] && EXTRA+=(--rec-lr "$REC_LR")
+[ "$REC_ANCHOR" = "1" ] && EXTRA+=(--rec-anchor)
 
 cd "$SLURM_SUBMIT_DIR" || exit 1
 if [ -n "${CONDA_ENV:-}" ]; then

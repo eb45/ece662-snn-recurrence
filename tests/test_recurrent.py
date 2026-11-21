@@ -14,12 +14,15 @@ from argparse import Namespace
 from unittest.mock import patch
 
 import torch
+import torch.nn.functional as F
 from spikingjelly.activation_based import functional
 from torch.utils.data import DataLoader, TensorDataset
 
 import train_recurrent
 from models import CSNN
 from probe_recurrent import probe
+from rec_drift import (backfill, conv_spectral_norm, drift_stats, net_drift_stats,
+                       rebuild_w0, rec_weights)
 from recurrent_model import LateReadout, RecurrentCSNN, RecurrentLIF, load_run
 
 SMALL = dict(channels=4, hidden=16)
@@ -147,34 +150,62 @@ class RecurrentTrainingTests(unittest.TestCase):
         loader = DataLoader(TensorDataset(frames.transpose(0, 1), labels), batch_size=2,
                             shuffle=False, collate_fn=_time_first_collate)
 
-        def make_args(output_dir, epochs, readout, rec_lr, rec_wd):
+        def make_args(output_dir, epochs, readout, rec_lr, rec_wd, anchor):
             return Namespace(
                 root="unused", out=output_dir, epochs=epochs, batch_size=2, accum=1, T=2,
                 channels=4, opt="adam", lr=1e-3, loss="mse", seed=17, num_workers=0,
                 no_amp=True, no_resume=False, rec_layers=["conv5", "fc"],
                 rec_init="orthogonal", rec_gain=0.5, freeze_rec=False,
                 readout=readout, late_k=1, clip_grad=1.0, rec_lr=rec_lr, rec_wd=rec_wd,
+                rec_anchor=anchor,
             )
 
-        # Second config also exercises the separate W_rec optimizer group across a resume.
-        for readout, rec_lr, rec_wd in (("mean", None, 0.0), ("late", 1e-4, 0.5)):
-            with self.subTest(readout=readout), tempfile.TemporaryDirectory() as out_dir:
+        # Later configs also exercise the separate W_rec optimizer group (and the
+        # anchored decay) across a resume.
+        configs = (("mean", None, 0.0, False), ("late", 1e-4, 0.5, False), ("mean", None, 0.5, True))
+        for readout, rec_lr, rec_wd, anchor in configs:
+            with self.subTest(readout=readout, rec_wd=rec_wd, anchor=anchor), \
+                    tempfile.TemporaryDirectory() as out_dir:
+                cfg = (readout, rec_lr, rec_wd, anchor)
                 with patch.object(train_recurrent, "get_loaders", return_value=(loader, loader)):
                     with patch.object(train_recurrent, "parse_args",
-                                      return_value=make_args(out_dir, 1, readout, rec_lr, rec_wd)):
+                                      return_value=make_args(out_dir, 1, *cfg)):
                         train_recurrent.main()
+                    w0_after_first = torch.load(os.path.join(out_dir, "w0.pt"))
                     with patch.object(train_recurrent, "parse_args",
-                                      return_value=make_args(out_dir, 2, readout, rec_lr, rec_wd)):
+                                      return_value=make_args(out_dir, 2, *cfg)):
                         train_recurrent.main()
 
                 with open(os.path.join(out_dir, "metrics.jsonl")) as f:
                     rows = [json.loads(line) for line in f]
                 self.assertEqual([r["epoch"] for r in rows], [0, 1])
                 self.assertEqual(set(rows[0]["rec_weight_norm"]), {"conv5", "fc"})
+                self.assertEqual(set(rows[0]["rec_drift"]), {"conv5", "fc", "all"})
+                # Whether a 4-channel toy net actually moves W_rec is checked on the
+                # cluster debug run; here only that the field is filled in.
+                self.assertGreaterEqual(rows[-1]["rec_drift"]["all"]["drift_rel"], 0.0)
 
                 with open(os.path.join(out_dir, "final.json")) as f:
                     final = json.load(f)
                 self.assertIsNotNone(final["final_test_acc"])
+                self.assertAlmostEqual(final["rec_init_stats"]["all"]["drift_rel"], 0.0)
+
+                # W0 is the init: a resume must not overwrite it, and rebuilding it
+                # from the seed (what the backfill does for old runs) must match.
+                w0 = torch.load(os.path.join(out_dir, "w0.pt"))
+                for k in w0:
+                    torch.testing.assert_close(w0[k], w0_after_first[k], rtol=0, atol=0)
+                rebuilt = rebuild_w0(final["args"])
+                for k in w0:
+                    torch.testing.assert_close(rebuilt[k], w0[k], rtol=0, atol=0)
+
+                # Backfilling a run that logged drift live gives the same final numbers.
+                res = backfill(out_dir)
+                self.assertTrue(res["w0_matches_saved"])
+                for layer in ("conv5", "fc"):
+                    for key in ("drift_rel", "spec_norm"):
+                        self.assertAlmostEqual(res["final"][layer][key],
+                                               rows[-1]["rec_drift"][layer][key], places=6)
 
                 # The gap sweep loads runs this way; channels=4 comes from final.json.
                 # checkpoint.pt always exists (best.pt only once test acc > 0).
@@ -182,8 +213,8 @@ class RecurrentTrainingTests(unittest.TestCase):
                 self.assertIsInstance(model, LateReadout if readout == "late" else RecurrentCSNN)
 
 
-def _opt_args(rec_lr=None, rec_wd=0.0, opt="adam"):
-    return Namespace(opt=opt, lr=1e-3, rec_lr=rec_lr, rec_wd=rec_wd)
+def _opt_args(rec_lr=None, rec_wd=0.0, opt="adam", rec_anchor=False):
+    return Namespace(opt=opt, lr=1e-3, rec_lr=rec_lr, rec_wd=rec_wd, rec_anchor=rec_anchor)
 
 
 class OptimizerTests(unittest.TestCase):
@@ -222,6 +253,111 @@ class OptimizerTests(unittest.TestCase):
         net = RecurrentCSNN(freeze_rec=True, **SMALL)
         opt, _ = train_recurrent.build_optimizer(net, _opt_args(rec_lr=1e-4, rec_wd=0.1))
         self.assertEqual(len(opt.param_groups), 1)
+
+
+class AnchoredDecayTests(unittest.TestCase):
+    def _setup(self, wd=0.5):
+        net = RecurrentCSNN(**SMALL)
+        opt, trainable = train_recurrent.build_optimizer(net, _opt_args(rec_wd=wd, rec_anchor=True))
+        w0 = rec_weights(net)
+        anchors = {id(m.rec.weight): w0[n] for n, m in net.rec_modules().items()}
+        return net, opt, trainable, w0, anchors
+
+    def _step_with_zero_grads(self, opt, trainable, anchors):
+        # Zero gradients: Adam's update is zero, so only the decay acts.
+        for p in trainable:
+            p.grad = torch.zeros_like(p)
+        train_recurrent.apply_anchored_decay(opt, anchors)
+        opt.step()
+
+    def test_group_settings(self):
+        _, opt, _, _, _ = self._setup()
+        base, rec = opt.param_groups
+        self.assertEqual((rec["weight_decay"], rec["anchor_wd"]), (0.0, 0.5))
+        self.assertEqual(base["weight_decay"], 0.0)
+        net = RecurrentCSNN(**SMALL)
+        opt, _ = train_recurrent.build_optimizer(net, _opt_args(rec_wd=0.5))
+        self.assertEqual((opt.param_groups[1]["weight_decay"], opt.param_groups[1]["anchor_wd"]),
+                         (0.5, 0.0))
+
+    def test_pulls_toward_w0_not_zero(self):
+        # W = W0 + D  ->  W0 + D * (1 - lr * wd); every other weight stays put.
+        net, opt, trainable, w0, anchors = self._setup()
+        g = torch.Generator().manual_seed(3)
+        deltas = {}
+        with torch.no_grad():
+            for n, m in net.rec_modules().items():
+                deltas[n] = torch.randn(m.rec.weight.shape, generator=g)
+                m.rec.weight.add_(deltas[n])
+        rec_ids = set(anchors)
+        before = {id(p): p.detach().clone() for p in trainable if id(p) not in rec_ids}
+        self._step_with_zero_grads(opt, trainable, anchors)
+        for n, m in net.rec_modules().items():
+            torch.testing.assert_close(m.rec.weight.detach(), w0[n] + deltas[n] * (1 - 1e-3 * 0.5))
+        for p in trainable:
+            if id(p) not in rec_ids:
+                torch.testing.assert_close(p.detach(), before[id(p)])
+
+    def test_no_pull_at_w0(self):
+        # At W = W0 anchored decay does nothing; plain decay would shrink W.
+        net, opt, trainable, w0, anchors = self._setup()
+        self._step_with_zero_grads(opt, trainable, anchors)
+        for n, m in net.rec_modules().items():
+            torch.testing.assert_close(m.rec.weight.detach(), w0[n])
+
+
+class DriftTests(unittest.TestCase):
+    def test_init_stats(self):
+        net = RecurrentCSNN(rec_layers=("conv5", "fc"), **SMALL)
+        stats = net_drift_stats(net, rec_weights(net))
+        for layer in ("conv5", "fc"):
+            self.assertAlmostEqual(stats[layer]["drift_rel"], 0.0)
+            self.assertAlmostEqual(stats[layer]["cos_to_init"], 1.0)
+        # Orthogonal x 0.5: every singular value and |eigenvalue| of fc is 0.5.
+        self.assertAlmostEqual(stats["fc"]["spec_norm"], 0.5, places=5)
+        self.assertAlmostEqual(stats["fc"]["radius"], 0.5, places=5)
+        self.assertNotIn("radius", stats["conv5"])
+        self.assertEqual(net.rec_map_sizes(), {"conv5": 8, "fc": None})
+
+    def test_conv_spectral_norm_matches_dense_operator(self):
+        torch.manual_seed(0)
+        c, size = 4, 8
+        w = torch.randn(c, c, 3, 3, dtype=torch.float64)
+        basis = torch.eye(c * size * size, dtype=torch.float64).reshape(-1, c, size, size)
+        dense = F.conv2d(basis, w, padding=1).reshape(c * size * size, -1).T
+        exact = torch.linalg.matrix_norm(dense, ord=2).item()
+        self.assertAlmostEqual(conv_spectral_norm(w, size) / exact, 1.0, places=4)
+
+    def test_known_drift_values(self):
+        a = torch.randn(6, 6)
+        sizes = {"fc": None}
+        doubled = drift_stats({"fc": 2 * a}, {"fc": a}, sizes)["fc"]
+        self.assertAlmostEqual(doubled["drift_rel"], 1.0, places=6)
+        self.assertAlmostEqual(doubled["cos_to_init"], 1.0, places=6)
+        flipped = drift_stats({"fc": -a}, {"fc": a}, sizes)["fc"]
+        self.assertAlmostEqual(flipped["drift_rel"], 2.0, places=6)
+        self.assertAlmostEqual(flipped["cos_to_init"], -1.0, places=6)
+        # Radius of a diagonal matrix is its largest |entry|; spec norm too.
+        diag = drift_stats({"fc": torch.diag(torch.tensor([0.3, -0.9, 0.1]))},
+                           {"fc": torch.eye(3)}, sizes)["fc"]
+        self.assertAlmostEqual(diag["radius"], 0.9, places=6)
+        self.assertAlmostEqual(diag["spec_norm"], 0.9, places=6)
+
+    def test_zero_init_has_no_relative_drift(self):
+        net = RecurrentCSNN(rec_init="zero", **SMALL)
+        stats = net_drift_stats(net, rec_weights(net))
+        self.assertIsNone(stats["fc"]["drift_rel"])
+        self.assertIsNone(stats["fc"]["cos_to_init"])
+        self.assertIsNone(stats["all"]["drift_rel"])
+        self.assertEqual(stats["all"]["spec_norm_max"], 0.0)
+
+    def test_does_not_touch_global_rng(self):
+        # Logging every epoch must not change dropout masks or data order.
+        net = RecurrentCSNN(**SMALL)
+        w0 = rec_weights(net)
+        state = torch.get_rng_state()
+        net_drift_stats(net, w0)
+        self.assertTrue(torch.equal(state, torch.get_rng_state()))
 
 
 class ProbeTests(unittest.TestCase):

@@ -130,6 +130,23 @@ python train_recurrent.py --root /path/to/dvs128_gesture --out runs/rec_conv5_fc
 | `--clip-grad` | `0` (off) | Gradient-norm clipping. If used, use it for every arm |
 | `--rec-lr` | same as `--lr` | Learning rate for `W_rec` only |
 | `--rec-wd` | `0` (off) | Decoupled (AdamW-style) weight decay on `W_rec` only |
+| `--rec-anchor` | off | Decay `W_rec` toward its init `W0` instead of toward 0 (L2-SP, Li et al. 2018). Same as `W = W0 + ΔW` with the `--rec-wd` decay on `ΔW` |
+
+### Drift logging, anchored decay, and the lr × placement sweep
+
+- Every epoch, `metrics.jsonl` gets `rec_drift`: per layer `drift_rel` (‖W−W0‖/‖W0‖),
+  `drift_abs`, `cos_to_init`, `spec_norm` (exact for fc, power iteration over the
+  8×8 map for conv5), and `radius` (fc only), plus pooled values under `all`.
+  `W0` is saved to `<out>/w0.pt`. The logging does not touch the global RNG, so
+  trajectories match runs trained before it existed.
+- Old runs: `python rec_drift.py <run dirs>` rebuilds `W0` from the seed and
+  writes `drift.json` (init / final / best). For frozen runs it checks that
+  the rebuilt `W0` equals the trained weights exactly.
+- `bash sweep_recurrent.sh poc|full` submits W_rec lr {1e-3, 3e-4, 1e-4, 3e-5} ×
+  {fc, conv5, conv5 fc} plus frozen and anchored/plain-decay runs, skipping
+  finished ones. `DRY_RUN=1` prints the list.
+- `python plot_drift.py --runs-dir ... --control ...` writes the CSV, a mean ± std
+  table, and the final test accuracy vs drift / spectral norm figure.
 
 sbatch equivalents: `REC_LAYERS`, `REC_INIT`, `REC_GAIN`, `FREEZE_REC=1`,
 `READOUT`, `LATE_K`, `CLIP_GRAD`, `REC_LR`, `REC_WD`. The default run name
