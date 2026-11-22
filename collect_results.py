@@ -12,6 +12,7 @@ Then it rebuilds, from everything in results/runs/ (not only the folders you
 passed, so you can collect a few at a time):
   results/summary.csv     one row per run
   results/main_table.csv  arms A to E: final-epoch mean and std over seeds, per dataset
+                          (full 64-epoch runs only; debug and short runs are left out)
 """
 
 import argparse
@@ -26,6 +27,7 @@ RESULTS = os.path.join(HERE, "results")
 RUNS = os.path.join(RESULTS, "runs")
 KEEP = ("final.json", "metrics.jsonl", "gap.json", "spikes.json")
 GAPS = (0, 2, 4, 8, 16)
+MIN_EPOCHS = 64  # runs shorter than this stay in summary.csv but not in main_table.csv
 
 
 def read_json(path):
@@ -53,8 +55,9 @@ def dataset_variant(args):
     """dvs128, dvsgc-81p, dvsgc-96u, or dvsgc-<custom> for anything else."""
     if args.get("dataset", "dvs128") == "dvs128":
         return "dvs128"
-    seq, cls = args.get("seq_len"), args.get("class_num")
-    lo, hi = args.get("alpha_min"), args.get("alpha_max")
+    # Runs from before the 96-u flags existed have no alpha/repeat args: they used the 81-p defaults.
+    seq, cls = args.get("seq_len", 4), args.get("class_num", 3)
+    lo, hi = args.get("alpha_min", 0.5), args.get("alpha_max", 0.7)
     no_rep = args.get("no_repeat", False)
     if (seq, cls, lo, hi, no_rep) == (4, 3, 0.5, 0.7, False):
         return "dvsgc-81p"
@@ -160,7 +163,9 @@ def main_table(rows):
     """Arms A to E, grouped by dataset: final-epoch accuracy mean and std over seeds."""
     groups = {}
     for r in rows:
-        if r["arm"] and r["final_test_acc"] is not None:
+        # Only full-length runs count: debug and short test runs are left out.
+        full = r["epochs_planned"] and r["epochs_done"] >= r["epochs_planned"] >= MIN_EPOCHS
+        if r["arm"] and r["final_test_acc"] is not None and full:
             groups.setdefault((r["dataset"], r["arm"]), []).append(r)
     out = []
     for (ds, arm), rs in sorted(groups.items()):
