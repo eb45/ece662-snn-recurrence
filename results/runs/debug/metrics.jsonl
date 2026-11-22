@@ -1,0 +1,2 @@
+{"epoch": 0, "train_loss": 0.06650317998818395, "train_acc": 0.407312925170068, "test_acc": 0.5868055555555556, "best_test_acc": 0.5868055555555556, "train_sec": 30.0, "epoch_sec": 32.1, "peak_gpu_gb": 3.88}
+{"epoch": 1, "train_loss": 0.0454873156410699, "train_acc": 0.6386054421768708, "test_acc": 0.6388888888888888, "best_test_acc": 0.6388888888888888, "train_sec": 20.9, "epoch_sec": 23.0, "peak_gpu_gb": 3.88}

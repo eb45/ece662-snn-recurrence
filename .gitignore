@@ -8,3 +8,6 @@ wandb/
 *.npz
 *.tar.gz
 .ipynb_checkpoints/
+
+# result summaries are tracked (checkpoints are not)
+!results/runs/*/final.json
