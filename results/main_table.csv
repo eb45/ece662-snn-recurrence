@@ -1,3 +1,4 @@
 dataset,arm,w_rec_learning,n_seeds,seeds,final_acc_mean,final_acc_std,best_acc_mean
 dvs128,A,none,1,2026,0.9236,,0.941
 dvsgc-81p,A,none,1,2026,0.911,,0.911
+dvsgc-96u,A,none,1,2026,0.5642,,0.5968
