@@ -1,0 +1,27 @@
+{
+  "best_test_acc": 0.05606995884773663,
+  "dataset": "dvsgc",
+  "num_classes": 81,
+  "params": 2058026,
+  "lif_neurons_per_step": 2794794,
+  "args": {
+    "dataset": "dvsgc",
+    "root": "/work/eb408/dvs128_gesture",
+    "out": "/work/eb408/ece662_runs/dvsgc_debug",
+    "epochs": 2,
+    "batch_size": 8,
+    "accum": 2,
+    "T": 16,
+    "channels": 128,
+    "opt": "adam",
+    "lr": 0.001,
+    "loss": "mse",
+    "seed": 2026,
+    "num_workers": 4,
+    "no_amp": false,
+    "cupy": false,
+    "no_resume": false,
+    "seq_len": 4,
+    "class_num": 3
+  }
+}
