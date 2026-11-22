@@ -152,7 +152,7 @@ class RecurrentTrainingTests(unittest.TestCase):
 
         def make_args(output_dir, epochs, readout, rec_lr, rec_wd, anchor):
             return Namespace(
-                root="unused", out=output_dir, epochs=epochs, batch_size=2, accum=1, T=2,
+                dataset="dvs128", root="unused", out=output_dir, epochs=epochs, batch_size=2, accum=1, T=2,
                 channels=4, opt="adam", lr=1e-3, loss="mse", seed=17, num_workers=0,
                 no_amp=True, no_resume=False, rec_layers=["conv5", "fc"],
                 rec_init="orthogonal", rec_gain=0.5, freeze_rec=False,
@@ -167,7 +167,8 @@ class RecurrentTrainingTests(unittest.TestCase):
             with self.subTest(readout=readout, rec_wd=rec_wd, anchor=anchor), \
                     tempfile.TemporaryDirectory() as out_dir:
                 cfg = (readout, rec_lr, rec_wd, anchor)
-                with patch.object(train_recurrent, "get_loaders", return_value=(loader, loader)):
+                with patch.object(train_recurrent, "get_dataset_loaders", return_value=(
+                        loader, loader, {"num_classes": 11, "frame_shape": (2, 128, 128)})):
                     with patch.object(train_recurrent, "parse_args",
                                       return_value=make_args(out_dir, 1, *cfg)):
                         train_recurrent.main()

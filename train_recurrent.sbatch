@@ -18,6 +18,9 @@
 # Regularize W_rec: REC_LAYERS="fc" REC_WD=1.0 sbatch train_recurrent.sbatch   (also REC_LR=1e-4)
 # Anchored decay:   REC_LAYERS="fc" REC_WD=1.0 REC_ANCHOR=1 sbatch train_recurrent.sbatch  (decay toward W0)
 # Whole grid:       bash sweep_recurrent.sh poc   (see that file)
+# DVS-GC 96-u:      DATASET=dvsgc T=32 DVSGC_ARGS="--seq-len 6 --alpha-min 0.2 --alpha-max 1.0 --no-repeat" \
+#                     DATA_ROOT=/work/eb408/dvs128_gesture REC_LAYERS="fc" sbatch --time=06:00:00 train_recurrent.sbatch
+#                   (run name gets a gc96u_ prefix; DATA_ROOT points at the shared DVS-GC cache)
 #
 # Python env: CONDA_ENV=<name> activates a conda env; otherwise VENV=<path> (default:
 # Emma's shared virtualenv) is sourced. Data and outputs default to /work/$USER.
@@ -26,6 +29,9 @@
 # If the job is preempted it requeues and train_recurrent.py resumes from
 # <OUT>/checkpoint.pt, so keep RUN_NAME the same across restarts.
 
+DATASET="${DATASET:-dvs128}"
+T="${T:-16}"
+DVSGC_ARGS="${DVSGC_ARGS:-}"
 EPOCHS="${EPOCHS:-64}"
 SEED="${SEED:-2026}"
 BATCH_SIZE="${BATCH_SIZE:-8}"
@@ -43,7 +49,12 @@ REC_ANCHOR="${REC_ANCHOR:-0}"
 
 # Default run name encodes every non-default setting, e.g. rec_fc_zero_wd1.0_s2026,
 # so two variants never share an output folder (and a checkpoint).
-TAG="rec_${REC_LAYERS// /_}"
+# DVS-GC runs get a dataset prefix (gc81p_ / gc96u_) so they never share a folder
+# with the DVS128 run of the same settings. Override with DS_TAG.
+if [ "$DATASET" = "dvsgc" ] && [ -z "${DS_TAG+x}" ]; then
+  case "$DVSGC_ARGS" in *--no-repeat*) DS_TAG="gc96u_" ;; *) DS_TAG="gc81p_" ;; esac
+fi
+TAG="${DS_TAG:-}rec_${REC_LAYERS// /_}"
 [ "$REC_INIT" = "zero" ] && TAG="${TAG}_zero"
 [ "$REC_GAIN" != "0.5" ] && TAG="${TAG}_g${REC_GAIN}"
 [ "$FREEZE_REC" = "1" ] && TAG="${TAG}_frozen"
@@ -73,12 +84,15 @@ fi
 
 mkdir -p logs "$OUT"
 nvidia-smi
+echo "dataset: $DATASET $DVSGC_ARGS  T: $T"
 echo "run: $RUN_NAME  out: $OUT  epochs: $EPOCHS  seed: $SEED  rec: $REC_LAYERS  freeze: $FREEZE_REC  readout: $READOUT"
 
 # REC_LAYERS is deliberately unquoted so "conv5 fc" becomes two arguments.
 python -u train_recurrent.py \
+  --dataset "$DATASET" \
   --root "$DATA_ROOT" \
   --out "$OUT" \
+  --T "$T" \
   --epochs "$EPOCHS" \
   --seed "$SEED" \
   --batch-size "$BATCH_SIZE" \
@@ -90,4 +104,5 @@ python -u train_recurrent.py \
   --late-k "$LATE_K" \
   --clip-grad "$CLIP_GRAD" \
   --rec-wd "$REC_WD" \
-  "${EXTRA[@]}"
+  "${EXTRA[@]}" \
+  $DVSGC_ARGS

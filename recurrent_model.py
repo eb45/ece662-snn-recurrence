@@ -168,11 +168,17 @@ class LateReadout(nn.Module):
         return self.model(x)[-self.k:]
 
 
-def build_from_args(args: dict, num_classes: int = 11) -> RecurrentCSNN:
-    """Rebuild the network from the args saved in a run's final.json."""
+def build_from_args(args: dict, num_classes: int = None) -> RecurrentCSNN:
+    """Rebuild the network from the args saved in a run's final.json.
+
+    Runs from before --dataset existed have no num_classes in their args; they
+    are DVS128 (11 classes, 2 x 128 x 128 frames).
+    """
     return RecurrentCSNN(
         rec_layers=args["rec_layers"], rec_init=args["rec_init"], rec_gain=args["rec_gain"],
-        freeze_rec=args["freeze_rec"], channels=args["channels"], num_classes=num_classes,
+        freeze_rec=args["freeze_rec"], channels=args["channels"],
+        num_classes=num_classes or args.get("num_classes", 11),
+        in_channels=args.get("in_channels", 2), input_size=args.get("input_size", 128),
     )
 
 

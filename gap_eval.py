@@ -83,7 +83,8 @@ def load_model(run_dir: str, num_classes: int, frame_shape, device, which: str =
                             in_channels=in_channels, input_size=input_size)
     else:
         net = CSNN(channels=args["channels"], num_classes=num_classes,
-                   in_channels=in_channels, input_size=input_size)
+                   in_channels=in_channels, input_size=input_size,
+                   neuron=args.get("neuron", "lif"))
 
     fname = "checkpoint.pt" if which == "final" else "best.pt"
     state = torch.load(os.path.join(run_dir, fname), map_location=device)

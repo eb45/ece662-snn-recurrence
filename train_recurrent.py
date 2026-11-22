@@ -41,7 +41,8 @@ import torch
 import torch.nn.functional as F
 from spikingjelly.activation_based import functional
 
-from dvs_data import DEFAULT_CONFIG, get_loaders, set_seed
+from datasets_extra import DATASETS, DVSGC_DEFAULTS, get_dataset_loaders
+from dvs_data import DEFAULT_CONFIG, set_seed
 from evaluate import evaluate
 from rec_drift import fmt_stats, net_drift_stats, rec_weights
 from recurrent_model import REC_INITS, REC_LAYER_NAMES, LateReadout, RecurrentCSNN
@@ -49,6 +50,7 @@ from recurrent_model import REC_INITS, REC_LAYER_NAMES, LateReadout, RecurrentCS
 
 def parse_args():
     p = argparse.ArgumentParser()
+    p.add_argument("--dataset", choices=sorted(DATASETS), default="dvs128")
     p.add_argument("--root", required=True, help="DVS128 Gesture root (contains download/)")
     p.add_argument("--out", required=True, help="Output folder for checkpoints and metrics")
     p.add_argument("--epochs", type=int, default=64)
@@ -86,6 +88,13 @@ def parse_args():
     p.add_argument("--rec-anchor", action="store_true",
                    help="Decay W_rec toward its init W0 instead of toward 0 (L2-SP style): "
                         "W = W0 + dW with the --rec-wd decay on dW. Needs --rec-wd > 0")
+    # DVS-Gesture-Chain options (ignored for dvs128). 96-u: --seq-len 6 --alpha-min 0.2
+    # --alpha-max 1.0 --no-repeat. The defaults are 81-p.
+    p.add_argument("--seq-len", type=int, default=DVSGC_DEFAULTS["seq_len"])
+    p.add_argument("--class-num", type=int, default=DVSGC_DEFAULTS["class_num"])
+    p.add_argument("--alpha-min", type=float, default=DVSGC_DEFAULTS["alpha_min"])
+    p.add_argument("--alpha-max", type=float, default=DVSGC_DEFAULTS["alpha_max"])
+    p.add_argument("--no-repeat", action="store_true")
     return p.parse_args()
 
 
@@ -161,15 +170,24 @@ def main():
         print("WARNING: no GPU found, training will be very slow")
     use_amp = (not args.no_amp) and device.type == "cuda"
 
-    train_loader, test_loader = get_loaders(
-        args.root, batch_size=args.batch_size, T=args.T,
-        num_workers=args.num_workers, seed=args.seed,
+    dataset_kwargs = {}
+    if args.dataset == "dvsgc":
+        dataset_kwargs = dict(seq_len=args.seq_len, class_num=args.class_num,
+                              alpha_min=args.alpha_min, alpha_max=args.alpha_max,
+                              repeat=not args.no_repeat)
+    train_loader, test_loader, info = get_dataset_loaders(
+        args.dataset, args.root, batch_size=args.batch_size, T=args.T,
+        num_workers=args.num_workers, seed=args.seed, **dataset_kwargs,
     )
+    num_classes = info["num_classes"]
+    in_channels, input_size, _ = info["frame_shape"]
+    # Saved with the args so build_from_args / load_run / rec_drift rebuild the same shape.
+    args.num_classes, args.in_channels, args.input_size = num_classes, in_channels, input_size
 
     net = RecurrentCSNN(
         rec_layers=args.rec_layers, rec_init=args.rec_init, rec_gain=args.rec_gain,
-        freeze_rec=args.freeze_rec, channels=args.channels,
-        num_classes=DEFAULT_CONFIG["num_classes"],
+        freeze_rec=args.freeze_rec, channels=args.channels, num_classes=num_classes,
+        in_channels=in_channels, input_size=input_size,
     ).to(device)
     # `model` is what the loss and evaluate() see; `net` is what gets saved.
     model = LateReadout(net, args.late_k) if args.readout == "late" else net
@@ -212,8 +230,6 @@ def main():
         start_epoch, best_acc = ck["epoch"] + 1, ck["best_acc"]
         last_acc = ck.get("last_acc")
         print(f"Resumed from epoch {start_epoch} (best test acc so far {best_acc:.4f})")
-
-    num_classes = DEFAULT_CONFIG["num_classes"]
 
     for epoch in range(start_epoch, args.epochs):
         model.train()
@@ -294,6 +310,7 @@ def main():
 
     with open(os.path.join(args.out, "final.json"), "w") as f:
         json.dump({"best_test_acc": best_acc, "final_test_acc": last_acc,
+                   "dataset": args.dataset, "num_classes": num_classes,
                    "params": n_params, "total_params": n_total, "rec_params": n_rec,
                    "lif_neurons_per_step": n_lif, "rec_init_stats": init_stats,
                    "rec_final_stats": net_drift_stats(net, w0), "args": vars(args)}, f, indent=2)

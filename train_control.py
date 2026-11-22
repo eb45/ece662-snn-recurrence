@@ -28,7 +28,7 @@ from spikingjelly.activation_based import functional, neuron
 from datasets_extra import DATASETS, DVSGC_DEFAULTS, get_dataset_loaders
 from dvs_data import DEFAULT_CONFIG, set_seed
 from evaluate import evaluate
-from models import CSNN
+from models import CSNN, NEURONS
 
 
 def parse_args():
@@ -52,6 +52,8 @@ def parse_args():
     p.add_argument("--num-workers", type=int, default=4)
     p.add_argument("--no-amp", action="store_true", help="Disable mixed precision")
     p.add_argument("--cupy", action="store_true", help="Use the cupy LIF backend (needs cupy installed)")
+    p.add_argument("--neuron", choices=NEURONS, default="lif",
+                   help="lif (default, tau 2) or if (no leak), for the neuron check")
     p.add_argument("--no-resume", action="store_true")
     # DVS-Gesture-Chain options (ignored for dvs128)
     p.add_argument("--seq-len", type=int, default=DVSGC_DEFAULTS["seq_len"])
@@ -94,9 +96,9 @@ def main():
     in_channels, input_size, _ = info["frame_shape"]
 
     model = CSNN(channels=args.channels, num_classes=num_classes,
-                 in_channels=in_channels, input_size=input_size).to(device)
+                 in_channels=in_channels, input_size=input_size, neuron=args.neuron).to(device)
     if args.cupy:
-        functional.set_backend(model, "cupy", instance=neuron.LIFNode)
+        functional.set_backend(model, "cupy", instance=(neuron.IFNode if args.neuron == "if" else neuron.LIFNode))
 
     n_params, n_lif = model.num_params(), model.num_lif_neurons()
     print(f"dataset: {args.dataset}   classes: {num_classes}   chance: {1 / num_classes:.4f}")

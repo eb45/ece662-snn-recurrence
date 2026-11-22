@@ -17,6 +17,7 @@
 # 96-u:        DATASET=dvsgc T=32 RUN_NAME=dvsgc96u_A_s2026 \
 #              DVSGC_ARGS="--seq-len 6 --alpha-min 0.2 --alpha-max 1.0 --no-repeat" sbatch train_extra.sbatch
 #              (always set RUN_NAME: the default name is the same for 81-p and 96-u)
+# IF neurons:  NEURON=if RUN_NAME=dvsgc96u_A_if_s2026 T=32 DVSGC_ARGS="..." sbatch train_extra.sbatch
 # Short run:   DATASET=dvsgc EPOCHS=20 RUN_NAME=dvsgc_ff_s2026 sbatch train_extra.sbatch
 #
 # Build the dataset cache first (build_extra_cache.sbatch), otherwise the
@@ -52,4 +53,5 @@ python -u train_control.py \
   --T "$T" \
   --batch-size "$BATCH_SIZE" \
   --accum "$ACCUM" \
+  --neuron "${NEURON:-lif}" \
   ${DVSGC_ARGS:-}

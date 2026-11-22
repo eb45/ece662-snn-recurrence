@@ -23,6 +23,12 @@ case "$MODE" in
 esac
 RUNS_ROOT="${RUNS_ROOT:-/work/${USER}/ece662_runs}"
 TIME="${TIME:-02:00:00}"
+# DVS-GC: DATASET, T, and DVSGC_ARGS pass through to train_recurrent.sbatch; run
+# names get the same gc81p_ / gc96u_ prefix it uses.
+DS_TAG=""
+if [ "${DATASET:-dvs128}" = "dvsgc" ]; then
+  case "${DVSGC_ARGS:-}" in *--no-repeat*) DS_TAG="gc96u_" ;; *) DS_TAG="gc81p_" ;; esac
+fi
 n_submit=0
 
 # submit LAYERS SEED FROZEN REC_LR REC_WD ANCHOR
@@ -30,7 +36,7 @@ n_submit=0
 # convention in train_recurrent.sbatch so existing runs are recognized.
 submit() {
   local layers="$1" seed="$2" frozen="$3" rlr="$4" wd="$5" anchor="$6"
-  local name="rec_${layers// /_}"
+  local name="${DS_TAG}rec_${layers// /_}"
   [ "$frozen" = 1 ] && name="${name}_frozen"
   [ -n "$rlr" ] && name="${name}_rlr${rlr}"
   [ "$wd" != 0 ] && name="${name}_wd${wd}"
@@ -45,7 +51,7 @@ submit() {
   n_submit=$((n_submit + 1))
   [ "${DRY_RUN:-0}" = 1 ] && return
   REC_LAYERS="$layers" SEED="$seed" FREEZE_REC="$frozen" REC_LR="$rlr" REC_WD="$wd" \
-    REC_ANCHOR="$anchor" RUN_NAME="$name" OUT="$RUNS_ROOT/$name" \
+    REC_ANCHOR="$anchor" RUN_NAME="$name" OUT="$RUNS_ROOT/$name" DS_TAG="$DS_TAG" \
     sbatch --job-name="$name" --time="$TIME" train_recurrent.sbatch
 }
 

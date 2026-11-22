@@ -16,16 +16,25 @@ import torch.nn as nn
 from spikingjelly.activation_based import functional, layer, neuron, surrogate
 
 
-def make_lif(tau: float = 2.0):
+NEURONS = ("lif", "if")
+
+
+def make_lif(tau: float = 2.0, kind: str = "lif"):
     # Same neuron settings as the tutorial. Keep this in one place so the
     # recurrent arm can reuse it and the "same neuron model" claim holds.
+    # kind="if" (no leak) is only for the neuron check on DVS-GC.
+    if kind == "if":
+        return neuron.IFNode(surrogate_function=surrogate.ATan(), detach_reset=True)
+    if kind != "lif":
+        raise ValueError(f"neuron must be one of {NEURONS}, got {kind!r}")
     return neuron.LIFNode(tau=tau, surrogate_function=surrogate.ATan(), detach_reset=True)
 
 
 class CSNN(nn.Module):
     def __init__(self, channels: int = 128, num_blocks: int = 5, num_classes: int = 11,
                  voting: int = 10, in_channels: int = 2, input_size: int = 128,
-                 hidden: int = 512, dropout: float = 0.5, tau: float = 2.0):
+                 hidden: int = 512, dropout: float = 0.5, tau: float = 2.0,
+                 neuron: str = "lif"):
         super().__init__()
         self.channels = channels
         self.num_blocks = num_blocks
@@ -40,7 +49,7 @@ class CSNN(nn.Module):
             conv += [
                 layer.Conv2d(c_in, channels, kernel_size=3, padding=1, bias=False),
                 layer.BatchNorm2d(channels),
-                make_lif(tau),
+                make_lif(tau, neuron),
                 layer.MaxPool2d(2, 2),
             ]
             c_in = channels
@@ -51,10 +60,10 @@ class CSNN(nn.Module):
             layer.Flatten(),
             layer.Dropout(dropout),
             layer.Linear(channels * final_size * final_size, hidden),
-            make_lif(tau),
+            make_lif(tau, neuron),
             layer.Dropout(dropout),
             layer.Linear(hidden, num_classes * voting),
-            make_lif(tau),
+            make_lif(tau, neuron),
             layer.VotingLayer(voting),
         )
 
