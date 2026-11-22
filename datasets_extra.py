@@ -238,9 +238,13 @@ if __name__ == "__main__":
     p.add_argument("--T", type=int, default=DEFAULT_CONFIG["T"])
     p.add_argument("--seq-len", type=int, default=DVSGC_DEFAULTS["seq_len"])
     p.add_argument("--class-num", type=int, default=DVSGC_DEFAULTS["class_num"])
+    p.add_argument("--alpha-min", type=float, default=DVSGC_DEFAULTS["alpha_min"])
+    p.add_argument("--alpha-max", type=float, default=DVSGC_DEFAULTS["alpha_max"])
+    p.add_argument("--no-repeat", action="store_true")
     args = p.parse_args()
 
     kwargs = {}
     if args.dataset == "dvsgc":
-        kwargs = dict(seq_len=args.seq_len, class_num=args.class_num)
+        kwargs = dict(seq_len=args.seq_len, class_num=args.class_num, alpha_min=args.alpha_min,
+                      alpha_max=args.alpha_max, repeat=not args.no_repeat)
     sanity_check(args.dataset, args.root, T=args.T, **kwargs)

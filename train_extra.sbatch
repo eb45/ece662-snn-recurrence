@@ -14,6 +14,9 @@
 # runs in the same venv and passes --dataset through).
 #
 # Debug run:   DATASET=dvsgc EPOCHS=2 RUN_NAME=dvsgc_debug sbatch --time=01:00:00 train_extra.sbatch
+# 96-u:        DATASET=dvsgc T=32 RUN_NAME=dvsgc96u_A_s2026 \
+#              DVSGC_ARGS="--seq-len 6 --alpha-min 0.2 --alpha-max 1.0 --no-repeat" sbatch train_extra.sbatch
+#              (always set RUN_NAME: the default name is the same for 81-p and 96-u)
 # Short run:   DATASET=dvsgc EPOCHS=20 RUN_NAME=dvsgc_ff_s2026 sbatch train_extra.sbatch
 #
 # Build the dataset cache first (build_extra_cache.sbatch), otherwise the
@@ -48,4 +51,5 @@ python -u train_control.py \
   --seed "$SEED" \
   --T "$T" \
   --batch-size "$BATCH_SIZE" \
-  --accum "$ACCUM"
+  --accum "$ACCUM" \
+  ${DVSGC_ARGS:-}

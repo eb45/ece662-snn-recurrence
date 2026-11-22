@@ -13,6 +13,8 @@
 # half-written cache file behind.
 #
 #   DATASET=dvsgc sbatch build_extra_cache.sbatch
+#   96-u at T=32:
+#   T=32 DVSGC_ARGS="--seq-len 6 --alpha-min 0.2 --alpha-max 1.0 --no-repeat" sbatch build_extra_cache.sbatch
 
 DATASET="${DATASET:-dvsgc}"
 T="${T:-16}"
@@ -24,4 +26,4 @@ source "$VENV/bin/activate" || { echo "could not activate $VENV"; exit 1; }
 
 mkdir -p logs
 echo "dataset: $DATASET  T: $T  root: $DATA_ROOT"
-time python -u datasets_extra.py --dataset "$DATASET" --root "$DATA_ROOT" --T "$T"
+time python -u datasets_extra.py --dataset "$DATASET" --root "$DATA_ROOT" --T "$T" ${DVSGC_ARGS:-}

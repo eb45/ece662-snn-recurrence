@@ -56,6 +56,12 @@ def parse_args():
     # DVS-Gesture-Chain options (ignored for dvs128)
     p.add_argument("--seq-len", type=int, default=DVSGC_DEFAULTS["seq_len"])
     p.add_argument("--class-num", type=int, default=DVSGC_DEFAULTS["class_num"])
+    p.add_argument("--alpha-min", type=float, default=DVSGC_DEFAULTS["alpha_min"],
+                   help="Shortest gesture as a fraction of the base length (96-u: 0.2)")
+    p.add_argument("--alpha-max", type=float, default=DVSGC_DEFAULTS["alpha_max"],
+                   help="Longest gesture as a fraction of the base length (96-u: 1.0)")
+    p.add_argument("--no-repeat", action="store_true",
+                   help="No gesture twice in a row (96-u). Default allows repeats (81-p)")
     return p.parse_args()
 
 
@@ -77,7 +83,9 @@ def main():
 
     dataset_kwargs = {}
     if args.dataset == "dvsgc":
-        dataset_kwargs = dict(seq_len=args.seq_len, class_num=args.class_num)
+        dataset_kwargs = dict(seq_len=args.seq_len, class_num=args.class_num,
+                              alpha_min=args.alpha_min, alpha_max=args.alpha_max,
+                              repeat=not args.no_repeat)
     train_loader, test_loader, info = get_dataset_loaders(
         args.dataset, args.root, batch_size=args.batch_size, T=args.T,
         num_workers=args.num_workers, seed=args.seed, **dataset_kwargs,
