@@ -1,0 +1,72 @@
+#!/bin/bash
+# Submit the W_rec learning-rate x placement grid plus anchored-decay runs.
+#
+#   DRY_RUN=1 bash sweep_recurrent.sh poc    # print what would be submitted
+#   bash sweep_recurrent.sh poc              # seed 2026 only (proof of concept)
+#   bash sweep_recurrent.sh full             # seeds 2026, 1, 2
+#
+# Runs whose folder already has final.json are skipped, so the seed-2026 runs
+# you already have (rec_fc_s2026, rec_conv5_fc_s2026, rec_fc_rlr1e-4_s2026,
+# rec_conv5_fc_frozen_s2026) are not repeated, and re-running this after a
+# partial sweep only submits what is missing. Unfinished runs that are already
+# queued would be submitted twice, so check squeue before re-running.
+#
+# Env: RUNS_ROOT (default /work/$USER/ece662_runs), TIME (default 02:00:00),
+# plus anything train_recurrent.sbatch reads (CONDA_ENV, DATA_ROOT, ...).
+
+set -euo pipefail
+MODE="${1:-poc}"
+case "$MODE" in
+  poc)  SEEDS="2026" ;;
+  full) SEEDS="2026 1 2" ;;
+  *)    echo "usage: bash sweep_recurrent.sh poc|full"; exit 1 ;;
+esac
+RUNS_ROOT="${RUNS_ROOT:-/work/${USER}/ece662_runs}"
+TIME="${TIME:-02:00:00}"
+n_submit=0
+
+# submit LAYERS SEED FROZEN REC_LR REC_WD ANCHOR
+# REC_LR "" means W_rec uses the network lr (1e-3). The name follows the
+# convention in train_recurrent.sbatch so existing runs are recognized.
+submit() {
+  local layers="$1" seed="$2" frozen="$3" rlr="$4" wd="$5" anchor="$6"
+  local name="rec_${layers// /_}"
+  [ "$frozen" = 1 ] && name="${name}_frozen"
+  [ -n "$rlr" ] && name="${name}_rlr${rlr}"
+  [ "$wd" != 0 ] && name="${name}_wd${wd}"
+  [ "$anchor" = 1 ] && name="${name}_anchor"
+  name="${name}_s${seed}"
+
+  if [ -f "$RUNS_ROOT/$name/final.json" ]; then
+    echo "skip   $name (finished)"
+    return
+  fi
+  echo "submit $name"
+  n_submit=$((n_submit + 1))
+  [ "${DRY_RUN:-0}" = 1 ] && return
+  REC_LAYERS="$layers" SEED="$seed" FREEZE_REC="$frozen" REC_LR="$rlr" REC_WD="$wd" \
+    REC_ANCHOR="$anchor" RUN_NAME="$name" OUT="$RUNS_ROOT/$name" \
+    sbatch --job-name="$name" --time="$TIME" train_recurrent.sbatch
+}
+
+for seed in $SEEDS; do
+  for layers in "fc" "conv5" "conv5 fc"; do
+    # Frozen random W_rec: the zero-drift end of every curve.
+    submit "$layers" "$seed" 1 "" 0 0
+    # W_rec lr grid ("" = 1e-3, the network lr).
+    for rlr in "" 3e-4 1e-4 3e-5; do
+      submit "$layers" "$seed" 0 "$rlr" 0 0
+    done
+  done
+
+  # Anchored decay (toward W0) vs. plain decay (toward 0), at the network lr.
+  # AdamW-style decay shrinks dW by about exp(-2.35 * wd) over 64 epochs here,
+  # so wd 0.3 / 1 / 3 keep roughly 50% / 10% / 0.1% of an unused direction.
+  for wd in 0.3 1.0 3.0; do
+    submit "fc" "$seed" 0 "" "$wd" 1
+  done
+  submit "fc" "$seed" 0 "" 1.0 0
+  submit "conv5 fc" "$seed" 0 "" 1.0 1
+done
+
+echo "$n_submit job(s) $([ "${DRY_RUN:-0}" = 1 ] && echo 'would be ' || true)submitted"

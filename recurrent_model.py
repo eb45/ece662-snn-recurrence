@@ -123,6 +123,15 @@ class RecurrentCSNN(CSNN):
             out[name] = container[idx]
         return out
 
+    def rec_map_sizes(self) -> dict:
+        """{layer name: side of the square map the conv W_rec acts on, or None for fc}.
+
+        The LIF of conv block b sits before its pool, so its map is input_size / 2^(b-1)
+        (conv5: 128 / 16 = 8).
+        """
+        return {name: None if name == "fc" else self.input_size // 2 ** (int(name[4:]) - 1)
+                for name in self.rec_layers}
+
     def num_rec_params(self) -> int:
         return sum(m.rec.weight.numel() for m in self.rec_modules().values())
 

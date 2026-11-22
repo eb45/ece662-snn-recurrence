@@ -20,6 +20,12 @@ Late readout (score only the last k steps; for the memory experiments):
 Regularize W_rec (learned recurrence overfits the training people otherwise):
     python train_recurrent.py --root ... --out .../rec_fc_wd1_s2026 --rec-layers fc --rec-wd 1.0
 
+Anchored decay (decay toward the init W0 instead of toward 0, L2-SP style):
+    python train_recurrent.py --root ... --out .../rec_fc_wd1.0_anchor_s2026 --rec-layers fc --rec-wd 1.0 --rec-anchor
+
+Every epoch also logs W_rec drift from init and its spectral norm/radius
+(metrics.jsonl "rec_drift"; see rec_drift.py). W0 is saved to <out>/w0.pt.
+
 Checkpoints are written every epoch and the script resumes automatically
 if <out>/checkpoint.pt exists, so a preempted scavenger job can requeue and
 carry on.
@@ -37,6 +43,7 @@ from spikingjelly.activation_based import functional
 
 from dvs_data import DEFAULT_CONFIG, get_loaders, set_seed
 from evaluate import evaluate
+from rec_drift import fmt_stats, net_drift_stats, rec_weights
 from recurrent_model import REC_INITS, REC_LAYER_NAMES, LateReadout, RecurrentCSNN
 
 
@@ -76,6 +83,9 @@ def parse_args():
                    help="Learning rate for W_rec only (default: same as --lr)")
     p.add_argument("--rec-wd", type=float, default=0.0,
                    help="Decoupled (AdamW-style) weight decay on W_rec only; 0 disables")
+    p.add_argument("--rec-anchor", action="store_true",
+                   help="Decay W_rec toward its init W0 instead of toward 0 (L2-SP style): "
+                        "W = W0 + dW with the --rec-wd decay on dW. Needs --rec-wd > 0")
     return p.parse_args()
 
 
@@ -87,13 +97,21 @@ def build_optimizer(net, args):
     trainable = [p for p in net.parameters() if p.requires_grad]
     rec_ids = {id(m.rec.weight) for m in net.rec_modules().values()}
     rec_trainable = [p for p in trainable if id(p) in rec_ids]
+    anchor = getattr(args, "rec_anchor", False)
+    if anchor and args.rec_wd <= 0:
+        print("WARNING: --rec-anchor does nothing without --rec-wd > 0")
     if rec_trainable and (args.rec_lr is not None or args.rec_wd > 0):
         # Everything except W_rec is optimized exactly as in the control (no decay).
+        # Anchored: AdamW's own decay (toward 0) is off for W_rec, and
+        # apply_anchored_decay() applies the same decoupled decay toward W0 instead.
         groups = [
             {"params": [p for p in trainable if id(p) not in rec_ids], "weight_decay": 0.0},
-            {"params": rec_trainable, "lr": args.rec_lr or args.lr, "weight_decay": args.rec_wd},
+            {"params": rec_trainable, "lr": args.rec_lr or args.lr,
+             "weight_decay": 0.0 if anchor else args.rec_wd,
+             "anchor_wd": args.rec_wd if anchor else 0.0},
         ]
-        print(f"W_rec optimizer group: lr={args.rec_lr or args.lr}, weight_decay={args.rec_wd}")
+        print(f"W_rec optimizer group: lr={args.rec_lr or args.lr}, weight_decay={args.rec_wd}"
+              f"{' toward W0 (anchored)' if anchor else ''}")
     else:
         groups = [{"params": trainable, "weight_decay": 0.0}]
         if args.rec_lr is not None or args.rec_wd > 0:
@@ -106,6 +124,25 @@ def build_optimizer(net, args):
     else:
         opt = torch.optim.SGD(groups, lr=args.lr, momentum=0.9)
     return opt, trainable
+
+
+@torch.no_grad()
+def apply_anchored_decay(opt, anchors: dict) -> None:
+    """W <- W - lr * wd * (W - W0) for every W_rec in a group with anchor_wd > 0.
+
+    Call right before opt.step(). AdamW decays p <- p - lr * wd * p and then
+    takes the Adam step, so this is exactly AdamW decay applied to dW = W - W0
+    (the parametrization W = W0 + dW), while the weight itself stays in
+    rec.weight and checkpoints, load_run and probe_recurrent are unchanged.
+    anchors maps id(W_rec) -> W0 on the same device. (Under AMP the decay also
+    runs on the rare steps GradScaler skips, a negligible difference.)
+    """
+    for group in opt.param_groups:
+        wd = group.get("anchor_wd", 0.0)
+        if wd <= 0:
+            continue
+        for p in group["params"]:
+            p.sub_(p - anchors[id(p)], alpha=group["lr"] * wd)
 
 
 def save_atomic(obj, path):
@@ -136,6 +173,16 @@ def main():
     ).to(device)
     # `model` is what the loss and evaluate() see; `net` is what gets saved.
     model = LateReadout(net, args.late_k) if args.readout == "late" else net
+
+    # W0 is captured here, before any resume, so it is always the seed-determined
+    # init (identical to what rec_drift.rebuild_w0 recomputes for old runs).
+    w0 = rec_weights(net)
+    w0_path = os.path.join(args.out, "w0.pt")
+    if not os.path.exists(w0_path):
+        save_atomic(w0, w0_path)
+    anchors = {id(m.rec.weight): w0[name].to(device) for name, m in net.rec_modules().items()}
+    init_stats = net_drift_stats(net, w0)
+    print(f"W_rec at init: {fmt_stats(init_stats)}")
 
     n_params, n_lif = net.num_params(), net.num_lif_neurons()
     n_total, n_rec = net.num_total_params(), net.num_rec_params()
@@ -201,6 +248,7 @@ def main():
                 if args.clip_grad > 0:
                     scaler.unscale_(opt)
                     torch.nn.utils.clip_grad_norm_(trainable, args.clip_grad)
+                apply_anchored_decay(opt, anchors)
                 scaler.step(opt)
                 scaler.update()
                 opt.zero_grad(set_to_none=True)
@@ -229,12 +277,14 @@ def main():
             "best_test_acc": best_acc, "train_sec": round(train_time, 1),
             "epoch_sec": round(epoch_time, 1), "peak_gpu_gb": round(peak_gb, 2),
             "rec_weight_norm": net.rec_weight_norms(),
+            "rec_drift": net_drift_stats(net, w0),
         }
         with open(metrics_path, "a") as f:
             f.write(json.dumps(row) + "\n")
         print(f"epoch {epoch + 1}/{args.epochs}  loss {row['train_loss']:.4f}  "
               f"train {row['train_acc']:.3f}  test {test_acc:.3f}  best {best_acc:.3f}  "
-              f"{epoch_time:.0f}s  peak {peak_gb:.1f} GB  |W_rec| {row['rec_weight_norm']}", flush=True)
+              f"{epoch_time:.0f}s  peak {peak_gb:.1f} GB  |W_rec| {row['rec_weight_norm']}\n"
+              f"    {fmt_stats(row['rec_drift'])}", flush=True)
 
         save_atomic({
             "model": net.state_dict(), "opt": opt.state_dict(),
@@ -245,7 +295,8 @@ def main():
     with open(os.path.join(args.out, "final.json"), "w") as f:
         json.dump({"best_test_acc": best_acc, "final_test_acc": last_acc,
                    "params": n_params, "total_params": n_total, "rec_params": n_rec,
-                   "lif_neurons_per_step": n_lif, "args": vars(args)}, f, indent=2)
+                   "lif_neurons_per_step": n_lif, "rec_init_stats": init_stats,
+                   "rec_final_stats": net_drift_stats(net, w0), "args": vars(args)}, f, indent=2)
     print(f"Done. Best test accuracy: {best_acc:.4f}   final epoch: {last_acc}")
 
 
