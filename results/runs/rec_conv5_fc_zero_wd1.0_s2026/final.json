@@ -1,0 +1,84 @@
+{
+  "best_test_acc": 0.9201388888888888,
+  "final_test_acc": 0.90625,
+  "params": 2108526,
+  "total_params": 2108526,
+  "rec_params": 409600,
+  "lif_neurons_per_step": 2794094,
+  "args": {
+    "root": "/hpc/home/ah670/dvs128_gesture",
+    "out": "/work/ah670/ece662_runs/rec_conv5_fc_zero_wd1.0_s2026",
+    "epochs": 64,
+    "batch_size": 8,
+    "accum": 2,
+    "T": 16,
+    "channels": 128,
+    "opt": "adam",
+    "lr": 0.001,
+    "loss": "mse",
+    "seed": 2026,
+    "num_workers": 4,
+    "no_amp": false,
+    "no_resume": false,
+    "rec_layers": [
+      "conv5",
+      "fc"
+    ],
+    "rec_init": "zero",
+    "rec_gain": 0.5,
+    "freeze_rec": false,
+    "readout": "mean",
+    "late_k": 4,
+    "clip_grad": 0.0,
+    "rec_lr": null,
+    "rec_wd": 1.0
+  },
+  "rec_init_stats": {
+    "conv5": {
+      "norm": 0.0,
+      "drift_abs": 0.0,
+      "drift_rel": null,
+      "cos_to_init": null,
+      "spec_norm": 0.0,
+      "stable_rank": null
+    },
+    "fc": {
+      "norm": 0.0,
+      "drift_abs": 0.0,
+      "drift_rel": null,
+      "cos_to_init": null,
+      "spec_norm": 0.0,
+      "radius": 0.0,
+      "stable_rank": null
+    },
+    "all": {
+      "drift_abs": 0.0,
+      "drift_rel": null,
+      "spec_norm_max": 0.0
+    }
+  },
+  "rec_final_stats": {
+    "conv5": {
+      "norm": 7.781273396757469,
+      "drift_abs": 7.781273396757469,
+      "drift_rel": null,
+      "cos_to_init": null,
+      "spec_norm": 8.43763020964671,
+      "stable_rank": 45.41885406890169
+    },
+    "fc": {
+      "norm": 12.126443257968795,
+      "drift_abs": 12.126443257968795,
+      "drift_rel": null,
+      "cos_to_init": null,
+      "spec_norm": 5.504203645969969,
+      "radius": 4.943012439328299,
+      "stable_rank": 4.853755443146734
+    },
+    "all": {
+      "drift_abs": 14.408290730125568,
+      "drift_rel": null,
+      "spec_norm_max": 8.43763020964671
+    }
+  }
+}

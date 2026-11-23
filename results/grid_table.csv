@@ -1,13 +1,13 @@
 placement,w_rec_learning,final_test_acc,best_test_acc,final_train_acc,w_rec_drift_rel,w_rec_spec_norm_max,run
 fc,frozen,to run (August),,,,,
 fc,lr 3e-05,to run (August),,,,,
-fc,lr 0.0001,to run (August),,,,,
+fc,lr 0.0001,0.9236,0.934,0.9991,0.4997,2.4982,rec_fc_rlr1e-4_s2026
 fc,lr 0.0003,to run (August),,,,,
-fc,lr 0.001,to run (August),,,,,
+fc,lr 0.001,0.8819,0.8924,0.9957,2.6101,11.2294,rec_fc_s2026
 fc,anchored wd 1,to run (August),,,,,
 fc,anchored wd 0.3,to run (August),,,,,
 fc,anchored wd 3,to run (August),,,,,
-fc,plain wd 0.1,to run (August),,,,,
+fc,plain wd 0.1,0.8854,0.9028,0.9906,2.3134,9.8528,rec_fc_wd0.1_s2026
 fc,plain wd 1,to run (August),,,,,
 conv5,frozen,to run (August),,,,,
 conv5,lr 3e-05,to run (August),,,,,
@@ -15,9 +15,9 @@ conv5,lr 0.0001,to run (August),,,,,
 conv5,lr 0.0003,to run (August),,,,,
 conv5,lr 0.001,to run (August),,,,,
 conv5,anchored wd 1,to run (August),,,,,
-conv5+fc,frozen,to run (August),,,,,
+conv5+fc,frozen,0.9236,0.9375,0.9991,0.0,0.9244,rec_conv5_fc_frozen_s2026
 conv5+fc,lr 3e-05,to run (August),,,,,
 conv5+fc,lr 0.0001,to run (August),,,,,
 conv5+fc,lr 0.0003,to run (August),,,,,
-conv5+fc,lr 0.001,to run (August),,,,,
+conv5+fc,lr 0.001,0.8715,0.8819,0.9974,,19.3534,rec_conv5_fc_zero_s2026
 conv5+fc,anchored wd 1,to run (August),,,,,

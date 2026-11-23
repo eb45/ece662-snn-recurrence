@@ -83,6 +83,7 @@ def collect(runs_dir: str) -> list:
             "drift_abs": stats["all"]["drift_abs"] if stats else None,
             "spec_norm_max": stats["all"]["spec_norm_max"] if stats else None,
             "fc_radius": stats.get("fc", {}).get("radius") if stats else None,
+            "fc_stable_rank": stats.get("fc", {}).get("stable_rank") if stats else None,
             "drift_source": source,
         })
     return rows

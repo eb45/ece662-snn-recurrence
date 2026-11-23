@@ -1,8 +1,8 @@
 dataset,arm,model,seeds_done,final_s2026,final_s1,final_s2,final_acc_mean,final_acc_std,gap8_acc_mean,drift_mean,missing
 dvs128,A,control,1/3,0.9236,to run (August),to run (August),0.9236,,0.8958,,"s1 (August), s2 (August)"
 dvs128,B,frozen W_rec,0/3,to run (August),to run (August),to run (August),,,,,"s2026 (August), s1 (August), s2 (August)"
-dvs128,C,learned W_rec (lr 1e-3),0/3,to run (August),to run (August),to run (August),,,,,"s2026 (August), s1 (August), s2 (August)"
-dvs128,D,slow W_rec (lr 1e-4),0/3,to run (August),to run (August),to run (August),,,,,"s2026 (August), s1 (August), s2 (August)"
+dvs128,C,learned W_rec (lr 1e-3),1/3,0.8819,to run (August),to run (August),0.8819,,,2.6101,"s1 (August), s2 (August)"
+dvs128,D,slow W_rec (lr 1e-4),1/3,0.9236,to run (August),to run (August),0.9236,,,0.4997,"s1 (August), s2 (August)"
 dvs128,E,anchored W_rec (wd 1.0),0/3,to run (August),to run (August),to run (August),,,,,"s2026 (August), s1 (August), s2 (August)"
 dvs128,LTC,LTC neurons,0/3,to run (Anna),to run (Anna),to run (Anna),,,,,"s2026 (Anna), s1 (Anna), s2 (Anna)"
 dvsgc-81p,A,control,1/1,0.911,-,-,0.911,,0.2711,,

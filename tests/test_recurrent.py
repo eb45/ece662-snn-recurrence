@@ -21,7 +21,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import train_recurrent
 from models import CSNN
 from probe_recurrent import probe
-from rec_drift import (backfill, conv_spectral_norm, drift_stats, net_drift_stats,
+from rec_drift import (backfill, conv_operator_fro2, conv_spectral_norm, drift_stats, net_drift_stats,
                        rebuild_w0, rec_weights)
 from recurrent_model import LateReadout, RecurrentCSNN, RecurrentLIF, load_run
 
@@ -203,6 +203,19 @@ class RecurrentTrainingTests(unittest.TestCase):
                 # Backfilling a run that logged drift live gives the same final numbers.
                 res = backfill(out_dir)
                 self.assertTrue(res["w0_matches_saved"])
+                self.assertFalse(res["final_json_updated"])  # training already wrote the stats
+
+                # An old run's final.json (no stats keys) gets them added, matching live logging.
+                final_path = os.path.join(out_dir, "final.json")
+                old = {k: v for k, v in final.items() if k not in ("rec_init_stats", "rec_final_stats")}
+                with open(final_path, "w") as f:
+                    json.dump(old, f)
+                self.assertTrue(backfill(out_dir)["final_json_updated"])
+                with open(final_path) as f:
+                    patched = json.load(f)
+                self.assertAlmostEqual(patched["rec_final_stats"]["fc"]["drift_rel"],
+                                       final["rec_final_stats"]["fc"]["drift_rel"], places=6)
+                self.assertEqual(patched["final_test_acc"], final["final_test_acc"])
                 for layer in ("conv5", "fc"):
                     for key in ("drift_rel", "spec_norm"):
                         self.assertAlmostEqual(res["final"][layer][key],
@@ -317,6 +330,7 @@ class DriftTests(unittest.TestCase):
         # Orthogonal x 0.5: every singular value and |eigenvalue| of fc is 0.5.
         self.assertAlmostEqual(stats["fc"]["spec_norm"], 0.5, places=5)
         self.assertAlmostEqual(stats["fc"]["radius"], 0.5, places=5)
+        self.assertAlmostEqual(stats["fc"]["stable_rank"], 16.0, places=3)  # full rank, hidden=16
         self.assertNotIn("radius", stats["conv5"])
         self.assertEqual(net.rec_map_sizes(), {"conv5": 8, "fc": None})
 
@@ -328,6 +342,8 @@ class DriftTests(unittest.TestCase):
         dense = F.conv2d(basis, w, padding=1).reshape(c * size * size, -1).T
         exact = torch.linalg.matrix_norm(dense, ord=2).item()
         self.assertAlmostEqual(conv_spectral_norm(w, size) / exact, 1.0, places=4)
+        # Closed-form operator Frobenius norm (used for conv stable rank) matches the dense one.
+        self.assertAlmostEqual(conv_operator_fro2(w, size) / dense.pow(2).sum().item(), 1.0, places=10)
 
     def test_known_drift_values(self):
         a = torch.randn(6, 6)

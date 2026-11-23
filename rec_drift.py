@@ -25,9 +25,14 @@ then build the model, exactly as training does), so no retraining is needed:
     python rec_drift.py /work/ah670/ece662_runs/rec_*_s2026
 
 Each run gets <run>/drift.json (init, final = checkpoint.pt, best = best.pt) and
-<run>/w0.pt if it was missing. For frozen runs the script checks that the rebuilt
+<run>/w0.pt if it was missing. If its final.json has no rec_init_stats /
+rec_final_stats (runs trained before drift logging), they are added there too,
+so collect_results.py sees the drift. Keys training already wrote are never
+overwritten. For frozen runs the script checks that the rebuilt
 W0 equals the trained weights bit for bit, which validates the rebuild for that
-seed and config.
+seed and config. The check allows float rounding (max |diff| <= 1e-5): the orthogonal
+init goes through a QR decomposition whose last bits depend on the LAPACK build
+and thread count, while a different random draw would differ by ~1e-2.
 """
 
 import argparse
@@ -79,6 +84,20 @@ def conv_spectral_norm(w: torch.Tensor, map_size: int, iters: int = POWER_ITERS)
 
 
 @torch.no_grad()
+def conv_operator_fro2(w: torch.Tensor, map_size: int) -> float:
+    """Squared Frobenius norm of the 'same' conv as a matrix on [C, map, map] inputs.
+
+    Tap (ky, kx) contributes w[:, :, ky, kx]^2 once per output position whose
+    input under that tap is inside the map (zero padding drops the rest), i.e.
+    (map - |ky - pad|) * (map - |kx - pad|) times.
+    """
+    w = w.double()
+    k, pad = w.shape[-1], w.shape[-1] // 2
+    counts = torch.tensor([map_size - abs(i - pad) for i in range(k)], dtype=torch.float64)
+    return ((w ** 2).sum(dim=(0, 1)) * counts[:, None] * counts[None, :]).sum().item()
+
+
+@torch.no_grad()
 def drift_stats(weights: dict, w0: dict, map_sizes: dict) -> dict:
     out, d2_sum, n02_sum = {}, 0.0, 0.0
     for name, w in weights.items():
@@ -93,8 +112,14 @@ def drift_stats(weights: dict, w0: dict, map_sizes: dict) -> dict:
         if w.dim() == 2:
             row["spec_norm"] = linear_spectral_norm(w)
             row["radius"] = spectral_radius(w)
+            fro2 = n * n
         else:
             row["spec_norm"] = conv_spectral_norm(w, map_sizes[name])
+            fro2 = conv_operator_fro2(w, map_sizes[name])  # whole operator, not the kernel
+        # Stable rank ||A||_F^2 / ||A||_2^2 of the recurrent operator, in [1, dim]: how many
+        # directions carry its energy. Orthogonal fc init gives the full 512; a few dominant
+        # modes give a small number. For conv5 the operator acts on 128 x 8 x 8 = 8192 dims.
+        row["stable_rank"] = fro2 / row["spec_norm"] ** 2 if row["spec_norm"] > 0 else None
         out[name] = row
         d2_sum += d * d
         n02_sum += n0 * n0
@@ -129,8 +154,17 @@ def fmt_stats(stats: dict) -> str:
         s = f"{name}: drift {rel} sn {r['spec_norm']:.3f}"
         if "radius" in r:
             s += f" rho {r['radius']:.3f}"
+        if r.get("stable_rank") is not None:
+            s += f" srank {r['stable_rank']:.1f}"
         parts.append(s)
     return "  ".join(parts)
+
+
+MATCH_ATOL = 1e-5  # entries are ~0.02; a different random draw differs by ~0.02, QR rounding by ~1e-7
+
+
+def max_abs_diff(a: dict, b: dict) -> float:
+    return max((a[k].float() - b[k].float()).abs().max().item() for k in a)
 
 
 def backfill(run_dir: str) -> dict:
@@ -146,7 +180,8 @@ def backfill(run_dir: str) -> dict:
     w0_path = os.path.join(run_dir, "w0.pt")
     if os.path.exists(w0_path):
         saved = torch.load(w0_path, map_location="cpu")
-        res["w0_matches_saved"] = all(torch.equal(saved[k], w0[k]) for k in w0)
+        res["w0_saved_max_diff"] = max_abs_diff(saved, w0)
+        res["w0_matches_saved"] = res["w0_saved_max_diff"] <= MATCH_ATOL
     else:
         torch.save(w0, w0_path)
 
@@ -160,11 +195,39 @@ def backfill(run_dir: str) -> dict:
         net.load_state_dict(state)
         res[key] = drift_stats(rec_weights(net), w0, sizes)
         if key == "final" and args["freeze_rec"]:
-            res["frozen_check"] = all(torch.equal(rec_weights(net)[k], w0[k]) for k in w0)
+            res["frozen_max_diff"] = max_abs_diff(rec_weights(net), w0)
+            res["frozen_check"] = res["frozen_max_diff"] <= MATCH_ATOL
 
     with open(os.path.join(run_dir, "drift.json"), "w") as f:
         json.dump(res, f, indent=2)
+    res["final_json_updated"] = add_stats_to_final_json(run_dir, res)
     return res
+
+
+def add_stats_to_final_json(run_dir: str, res: dict) -> bool:
+    """Give an old run's final.json the rec_init_stats / rec_final_stats keys that
+    training now writes, so collect_results.py picks up its drift.
+
+    Only adds missing keys and never overwrites ones training wrote. The final
+    stats come from checkpoint.pt (the last epoch), matching what training logs.
+    Returns True if final.json was changed.
+    """
+    if "final" not in res:
+        return False
+    path = os.path.join(run_dir, "final.json")
+    with open(path) as f:
+        final = json.load(f)
+    added = False
+    for key, stats in (("rec_init_stats", res["init"]), ("rec_final_stats", res["final"])):
+        if key not in final:
+            final[key] = stats
+            added = True
+    if added:
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(final, f, indent=2)
+        os.replace(tmp, path)
+    return added
 
 
 def main():
@@ -180,9 +243,13 @@ def main():
         if "final" in res:
             print(f"  final  {fmt_stats(res['final'])}")
         if "frozen_check" in res:
-            print(f"  frozen check (rebuilt W0 == trained W): {'OK' if res['frozen_check'] else 'MISMATCH'}")
+            print(f"  frozen check (rebuilt W0 == trained W): "
+                  f"{'OK' if res['frozen_check'] else 'MISMATCH'} (max |diff| {res['frozen_max_diff']:.2e})")
         if "w0_matches_saved" in res:
-            print(f"  rebuilt W0 == saved w0.pt: {'OK' if res['w0_matches_saved'] else 'MISMATCH'}")
+            print(f"  rebuilt W0 == saved w0.pt: {'OK' if res['w0_matches_saved'] else 'MISMATCH'}"
+                  f" (max |diff| {res['w0_saved_max_diff']:.2e})")
+        if res["final_json_updated"]:
+            print("  added rec_init_stats / rec_final_stats to final.json")
 
 
 if __name__ == "__main__":
