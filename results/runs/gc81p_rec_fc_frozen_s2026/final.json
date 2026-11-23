@@ -1,0 +1,77 @@
+{
+  "best_test_acc": 0.911522633744856,
+  "final_test_acc": 0.904835390946502,
+  "dataset": "dvsgc",
+  "num_classes": 81,
+  "params": 2058026,
+  "total_params": 2320170,
+  "rec_params": 262144,
+  "lif_neurons_per_step": 2794794,
+  "rec_init_stats": {
+    "fc": {
+      "norm": 11.313708628816519,
+      "drift_abs": 0.0,
+      "drift_rel": 0.0,
+      "cos_to_init": 0.9999999999999396,
+      "spec_norm": 0.5000004575417757,
+      "radius": 0.5000000258331109
+    },
+    "all": {
+      "drift_abs": 0.0,
+      "drift_rel": 0.0,
+      "spec_norm_max": 0.5000004575417757
+    }
+  },
+  "rec_final_stats": {
+    "fc": {
+      "norm": 11.313708628816519,
+      "drift_abs": 0.0,
+      "drift_rel": 0.0,
+      "cos_to_init": 0.9999999999999396,
+      "spec_norm": 0.5000004575417757,
+      "radius": 0.5000000258331109
+    },
+    "all": {
+      "drift_abs": 0.0,
+      "drift_rel": 0.0,
+      "spec_norm_max": 0.5000004575417757
+    }
+  },
+  "args": {
+    "dataset": "dvsgc",
+    "root": "/work/eb408/dvs128_gesture",
+    "out": "/work/eb408/ece662_runs/gc81p_rec_fc_frozen_s2026",
+    "epochs": 64,
+    "batch_size": 8,
+    "accum": 2,
+    "T": 16,
+    "channels": 128,
+    "opt": "adam",
+    "lr": 0.001,
+    "loss": "mse",
+    "seed": 2026,
+    "num_workers": 4,
+    "no_amp": false,
+    "no_resume": false,
+    "rec_layers": [
+      "fc"
+    ],
+    "rec_init": "orthogonal",
+    "rec_gain": 0.5,
+    "freeze_rec": true,
+    "readout": "mean",
+    "late_k": 4,
+    "clip_grad": 0.0,
+    "rec_lr": null,
+    "rec_wd": 0.0,
+    "rec_anchor": false,
+    "seq_len": 4,
+    "class_num": 3,
+    "alpha_min": 0.5,
+    "alpha_max": 0.7,
+    "no_repeat": false,
+    "num_classes": 81,
+    "in_channels": 2,
+    "input_size": 128
+  }
+}
