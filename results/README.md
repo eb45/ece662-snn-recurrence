@@ -8,7 +8,8 @@ Every number in the final report and poster comes from this folder.
 | --- | --- |
 | `runs/<run name>/` | Copies of each run's `final.json`, `metrics.jsonl` (one line per epoch), `gap.json`, and `spikes.json`. No checkpoints. |
 | `summary.csv` | One row per run: dataset, arm, W_rec placement and learning setting, seed, final and best test accuracy, W_rec drift, gap / reverse / shuffle accuracy, spike counts. |
-| `main_table.csv` | Arms A to E per dataset: final-epoch accuracy, mean and std over seeds. |
+| `main_table.csv` | Every planned (dataset, arm), A to E plus LTC: final-epoch accuracy per seed, mean and std, gap-8 accuracy, W_rec drift. Seeds not run yet say `to run (<owner>)`. |
+| `grid_table.csv` | DVS128 seed-2026 grid: W_rec placement (fc, conv5, conv5+fc) x learning setting, with final accuracy and drift. Cells not run yet say `to run (August)`. |
 
 Both CSVs are rebuilt from `runs/` by `collect_results.py`, so never edit them by hand.
 

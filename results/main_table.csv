@@ -1,10 +1,15 @@
-dataset,arm,w_rec_learning,n_seeds,seeds,final_acc_mean,final_acc_std,best_acc_mean
-dvs128,A,none,1,2026,0.9236,,0.941
-dvsgc-81p,A,none,1,2026,0.911,,0.911
-dvsgc-81p,B,frozen,1,2026,0.9048,,0.9115
-dvsgc-81p,C,lr 0.001,1,2026,0.9342,,0.9563
-dvsgc-96u,A,none,1,2026,0.5642,,0.5968
-dvsgc-96u,B,frozen,1,2026,0.5456,,0.5977
-dvsgc-96u,C,lr 0.001,1,2026,0.8793,,0.8824
-dvsgc-96u,D,lr 0.0001,1,2026,0.816,,0.826
-dvsgc-96u,E,anchored wd 1,1,2026,0.8112,,0.8168
+dataset,arm,model,seeds_done,final_s2026,final_s1,final_s2,final_acc_mean,final_acc_std,gap8_acc_mean,drift_mean,missing
+dvs128,A,control,1/3,0.9236,to run (August),to run (August),0.9236,,0.8958,,"s1 (August), s2 (August)"
+dvs128,B,frozen W_rec,0/3,to run (August),to run (August),to run (August),,,,,"s2026 (August), s1 (August), s2 (August)"
+dvs128,C,learned W_rec (lr 1e-3),0/3,to run (August),to run (August),to run (August),,,,,"s2026 (August), s1 (August), s2 (August)"
+dvs128,D,slow W_rec (lr 1e-4),0/3,to run (August),to run (August),to run (August),,,,,"s2026 (August), s1 (August), s2 (August)"
+dvs128,E,anchored W_rec (wd 1.0),0/3,to run (August),to run (August),to run (August),,,,,"s2026 (August), s1 (August), s2 (August)"
+dvs128,LTC,LTC neurons,0/3,to run (Anna),to run (Anna),to run (Anna),,,,,"s2026 (Anna), s1 (Anna), s2 (Anna)"
+dvsgc-81p,A,control,1/1,0.911,-,-,0.911,,0.2711,,
+dvsgc-81p,B,frozen W_rec,1/1,0.9048,-,-,0.9048,,0.3431,0.0,
+dvsgc-81p,C,learned W_rec (lr 1e-3),1/1,0.9342,-,-,0.9342,,0.4532,7.8373,
+dvsgc-96u,A,control,1/3,0.5642,to run (August),to run (August),0.5642,,0.4123,,"s1 (August), s2 (August)"
+dvsgc-96u,B,frozen W_rec,1/3,0.5456,to run (August),to run (August),0.5456,,,0.0,"s1 (August), s2 (August)"
+dvsgc-96u,C,learned W_rec (lr 1e-3),1/3,0.8793,to run (August),to run (August),0.8793,,0.4718,6.986,"s1 (August), s2 (August)"
+dvsgc-96u,D,slow W_rec (lr 1e-4),1/3,0.816,to run (August),to run (August),0.816,,,1.8137,"s1 (August), s2 (August)"
+dvsgc-96u,E,anchored W_rec (wd 1.0),1/3,0.8112,to run (August),to run (August),0.8112,,0.5668,1.2245,"s1 (August), s2 (August)"

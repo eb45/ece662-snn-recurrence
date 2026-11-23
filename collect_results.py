@@ -11,8 +11,9 @@ out) are skipped.
 Then it rebuilds, from everything in results/runs/ (not only the folders you
 passed, so you can collect a few at a time):
   results/summary.csv     one row per run
-  results/main_table.csv  arms A to E: final-epoch mean and std over seeds, per dataset
-                          (full 64-epoch runs only; debug and short runs are left out)
+  results/main_table.csv  every planned (dataset, arm), A to E plus LTC: final accuracy per seed,
+                          mean and std, and who still owes which seed (full 64-epoch runs only)
+  results/grid_table.csv  DVS128 seed-2026 placement x W_rec setting grid, blank cells to run
 """
 
 import argparse
@@ -68,8 +69,8 @@ def dataset_variant(args):
 
 def describe(args):
     """(model, placement, how W_rec learns, arm letter or '')."""
-    if args.get("neuron") == "ltc" or args.get("model") == "ltc":
-        return "ltc", "", "", ""
+    if "ltc" in (str(args.get("neuron", "")) + str(args.get("model", "")) + str(args.get("out", ""))).lower():
+        return "ltc", "", "LTC neurons", "LTC"
     layers = args.get("rec_layers")
     if not layers:
         neuron = args.get("neuron", "lif")
@@ -159,26 +160,96 @@ def write_csv(path, rows):
             w.writerow({k: ("" if r.get(k) is None else r[k]) for k in cols})
 
 
+# Every run the paper needs, so missing ones show up as blank cells with an owner.
+# (dataset, arm) -> {seed: owner}
+SEEDS = (2026, 1, 2)
+PLAN = {}
+for _arm in "ABCDE":
+    PLAN[("dvs128", _arm)] = {2026: "August", 1: "August", 2: "August"}
+    PLAN[("dvsgc-96u", _arm)] = {2026: "Emma", 1: "August", 2: "August"}
+PLAN[("dvs128", "A")][2026] = "Emma"
+for _arm in "ABC":
+    PLAN[("dvsgc-81p", _arm)] = {2026: "Emma"}
+PLAN[("dvs128", "LTC")] = {2026: "Anna", 1: "Anna", 2: "Anna"}
+ARM_NAMES = {"A": "control", "B": "frozen W_rec", "C": "learned W_rec (lr 1e-3)",
+             "D": "slow W_rec (lr 1e-4)", "E": "anchored W_rec (wd 1.0)", "LTC": "LTC neurons"}
+DATASET_ORDER = {"dvs128": 0, "dvsgc-81p": 1, "dvsgc-96u": 2}
+
+# Placement x learning-setting grid on DVS128, seed 2026 (August).
+GRID_PLACEMENTS = ("fc", "conv5", "conv5+fc")
+GRID_SETTINGS = ("frozen", "lr 3e-05", "lr 0.0001", "lr 0.0003", "lr 0.001", "anchored wd 1")
+GRID_FC_EXTRAS = ("anchored wd 0.3", "anchored wd 3", "plain wd 0.1", "plain wd 1")
+
+
+def _full(r):
+    """Only full-length runs count: debug and short test runs are left out."""
+    return bool(r["epochs_planned"]) and r["epochs_done"] >= r["epochs_planned"] >= MIN_EPOCHS \
+        and r["final_test_acc"] is not None
+
+
+def _fmt(x):
+    return "" if x is None else round(x, 4)
+
+
 def main_table(rows):
-    """Arms A to E, grouped by dataset: final-epoch accuracy mean and std over seeds."""
-    groups = {}
+    """Arms A to E (+ LTC) per dataset: one row per planned (dataset, arm), filled where done.
+
+    Per-seed final accuracy, then mean and std over the seeds that are done.
+    Arms that ran but are not in PLAN are added at the end.
+    """
+    done = {}
     for r in rows:
-        # Only full-length runs count: debug and short test runs are left out.
-        full = r["epochs_planned"] and r["epochs_done"] >= r["epochs_planned"] >= MIN_EPOCHS
-        if r["arm"] and r["final_test_acc"] is not None and full:
-            groups.setdefault((r["dataset"], r["arm"]), []).append(r)
+        if r["arm"] and _full(r):
+            done.setdefault((r["dataset"], r["arm"]), {})[r["seed"]] = r
+    keys = list(PLAN) + [k for k in done if k not in PLAN]
+    keys.sort(key=lambda k: (DATASET_ORDER.get(k[0], 9), "ABCDE".find(k[1]) % 10 if k[1] in "ABCDE" else 8))
     out = []
-    for (ds, arm), rs in sorted(groups.items()):
-        rs.sort(key=lambda r: r["seed"])
-        accs = [r["final_test_acc"] for r in rs]
-        out.append({
-            "dataset": ds, "arm": arm,
-            "w_rec_learning": rs[0]["w_rec_learning"] or "none",
-            "n_seeds": len(accs), "seeds": " ".join(str(r["seed"]) for r in rs),
-            "final_acc_mean": round(statistics.mean(accs), 4),
-            "final_acc_std": round(statistics.stdev(accs), 4) if len(accs) > 1 else "",
-            "best_acc_mean": round(statistics.mean(r["best_test_acc"] for r in rs), 4),
-        })
+    for ds, arm in keys:
+        plan = PLAN.get((ds, arm), {})
+        runs = done.get((ds, arm), {})
+        accs = [runs[s]["final_test_acc"] for s in SEEDS if s in runs]
+        gap8 = [runs[s]["gap8_acc"] for s in SEEDS if s in runs and runs[s]["gap8_acc"] is not None]
+        missing = [s for s in plan if s not in runs]
+        row = {"dataset": ds, "arm": arm, "model": ARM_NAMES.get(arm, arm),
+               "seeds_done": f"{len(runs)}/{len(plan) or len(runs)}"}
+        for s in SEEDS:
+            if s in runs:
+                row[f"final_s{s}"] = _fmt(runs[s]["final_test_acc"])
+            elif s in plan:
+                row[f"final_s{s}"] = f"to run ({plan[s]})"
+            else:
+                row[f"final_s{s}"] = "-"
+        row["final_acc_mean"] = _fmt(statistics.mean(accs)) if accs else ""
+        row["final_acc_std"] = _fmt(statistics.stdev(accs)) if len(accs) > 1 else ""
+        row["gap8_acc_mean"] = _fmt(statistics.mean(gap8)) if gap8 else ""
+        row["drift_mean"] = _fmt(statistics.mean(
+            [runs[s]["w_rec_drift_rel"] for s in runs if runs[s]["w_rec_drift_rel"] is not None])) \
+            if any(runs[s]["w_rec_drift_rel"] is not None for s in runs) else ""
+        row["missing"] = ", ".join(f"s{s} ({plan[s]})" for s in missing)
+        out.append(row)
+    return out
+
+
+def grid_table(rows):
+    """DVS128 seed-2026 placement x W_rec setting grid: final accuracy and drift per cell."""
+    cell = {}
+    for r in rows:
+        if r["dataset"] == "dvs128" and r["seed"] == 2026 and r["model"] == "recurrent" and _full(r):
+            cell[(r["w_rec_placement"], r["w_rec_learning"])] = r
+    out = []
+    for place in GRID_PLACEMENTS:
+        settings = GRID_SETTINGS + (GRID_FC_EXTRAS if place == "fc" else ())
+        for how in settings:
+            r = cell.get((place, how))
+            out.append({
+                "placement": place, "w_rec_learning": how,
+                "final_test_acc": _fmt(r["final_test_acc"]) if r else "to run (August)",
+                "best_test_acc": _fmt(r["best_test_acc"]) if r else "",
+                "final_train_acc": _fmt(r["final_train_acc"]) if r else "",
+                "w_rec_drift_rel": _fmt(r["w_rec_drift_rel"]) if r else "",
+                "w_rec_spec_norm_max": _fmt(r["w_rec_spec_norm_max"]) if r else "",
+                "run": r["run"] if r else "",
+            })
     return out
 
 
@@ -207,6 +278,7 @@ def rebuild():
                              r["w_rec_learning"], r["seed"] or 0))
     write_csv(os.path.join(RESULTS, "summary.csv"), rows)
     write_csv(os.path.join(RESULTS, "main_table.csv"), main_table(rows))
+    write_csv(os.path.join(RESULTS, "grid_table.csv"), grid_table(rows))
     print(f"summary.csv: {len(rows)} runs")
     return rows
 
