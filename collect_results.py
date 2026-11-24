@@ -88,14 +88,22 @@ def describe(args):
         how = f"lr {lr:g}"
     else:
         how = f"lr {args.get('lr', 1e-3):g}"
+    # Anything off the main setting (orthogonal init, gain 0.5, mean readout, no clipping)
+    # gets a suffix, so variants never share a grid cell or an arm with the main run.
+    if args.get("rec_init", "orthogonal") != "orthogonal":
+        how += f", {args['rec_init']} init"
+    if args.get("rec_gain", 0.5) != 0.5:
+        how += f", gain {args['rec_gain']:g}"
     if args.get("readout") == "late":
         how += ", late readout"
+    if args.get("clip_grad"):
+        how += f", clip {args['clip_grad']:g}"
 
     arm = ""
-    if place == "fc" and args.get("readout", "mean") == "mean" and not args.get("clip_grad"):
+    if place == "fc":
         if how == "frozen":
             arm = "B"
-        elif how == f"lr {args.get('lr', 1e-3):g}" and args.get("rec_init", "orthogonal") == "orthogonal":
+        elif how == f"lr {args.get('lr', 1e-3):g}":
             arm = "C"
         elif how == "lr 0.0001":
             arm = "D"

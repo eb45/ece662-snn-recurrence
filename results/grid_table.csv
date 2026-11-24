@@ -19,5 +19,5 @@ conv5+fc,frozen,0.9236,0.9375,0.9991,0.0,0.9244,rec_conv5_fc_frozen_s2026
 conv5+fc,lr 3e-05,to run (August),,,,,
 conv5+fc,lr 0.0001,to run (August),,,,,
 conv5+fc,lr 0.0003,to run (August),,,,,
-conv5+fc,lr 0.001,0.8715,0.8819,0.9974,,19.3534,rec_conv5_fc_zero_s2026
+conv5+fc,lr 0.001,0.8507,0.8646,0.9974,2.5851,18.1065,rec_conv5_fc_s2026
 conv5+fc,anchored wd 1,to run (August),,,,,
