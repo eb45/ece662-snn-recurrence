@@ -26,7 +26,13 @@ DATA_ROOT="${DATA_ROOT:-/work/eb408/dvs128_gesture}"
 OUT="${OUT:-/work/eb408/ece662_runs/${RUN_NAME}}"
 
 cd "$SLURM_SUBMIT_DIR" || exit 1
-source /hpc/group/naderilab/eb408/peft_proteomics/peft_proteomics_env/bin/activate
+if [ -n "${CONDA_ENV:-}" ]; then
+  # sbatch inherits PATH from the submitting shell, so conda is found if it works there.
+  source "$(conda info --base)/etc/profile.d/conda.sh" || { echo "conda not found"; exit 1; }
+  conda activate "$CONDA_ENV" || exit 1
+else
+  source "${VENV:-/hpc/group/naderilab/eb408/peft_proteomics/peft_proteomics_env}/bin/activate" || exit 1
+fi
 
 mkdir -p logs "$OUT"
 nvidia-smi
