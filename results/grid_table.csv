@@ -1,23 +1,23 @@
 placement,w_rec_learning,final_test_acc,best_test_acc,final_train_acc,w_rec_drift_rel,w_rec_spec_norm_max,run
-fc,frozen,to run (August),,,,,
-fc,lr 3e-05,to run (August),,,,,
+fc,frozen,0.9236,0.9306,0.9983,0.0,0.5,rec_fc_frozen_s2026
+fc,lr 3e-05,0.9306,0.934,0.9991,0.1598,1.0384,rec_fc_rlr3e-5_s2026
 fc,lr 0.0001,0.9236,0.934,0.9991,0.4997,2.4982,rec_fc_rlr1e-4_s2026
-fc,lr 0.0003,to run (August),,,,,
+fc,lr 0.0003,0.8958,0.9236,0.9991,1.2873,6.2286,rec_fc_rlr3e-4_s2026
 fc,lr 0.001,0.8819,0.8924,0.9957,2.6101,11.2294,rec_fc_s2026
-fc,anchored wd 1,to run (August),,,,,
-fc,anchored wd 0.3,to run (August),,,,,
-fc,anchored wd 3,to run (August),,,,,
+fc,anchored wd 1,0.8958,0.8993,0.9983,1.26,6.0517,rec_fc_wd1.0_anchor_s2026
+fc,anchored wd 0.3,0.8993,0.9028,0.9974,1.941,8.5486,rec_fc_wd0.3_anchor_s2026
+fc,anchored wd 3,0.9097,0.9306,0.9983,0.6096,3.2796,rec_fc_wd3.0_anchor_s2026
 fc,plain wd 0.1,0.8854,0.9028,0.9906,2.3134,9.8528,rec_fc_wd0.1_s2026
 fc,plain wd 1,to run (August),,,,,
-conv5,frozen,to run (August),,,,,
-conv5,lr 3e-05,to run (August),,,,,
-conv5,lr 0.0001,to run (August),,,,,
-conv5,lr 0.0003,to run (August),,,,,
-conv5,lr 0.001,to run (August),,,,,
-conv5,anchored wd 1,to run (August),,,,,
+conv5,frozen,0.9201,0.9375,0.9991,0.0,0.9244,rec_conv5_frozen_s2026
+conv5,lr 3e-05,0.9271,0.934,0.9991,0.2144,1.9356,rec_conv5_rlr3e-5_s2026
+conv5,lr 0.0001,0.9201,0.9306,1.0,0.6102,4.6102,rec_conv5_rlr1e-4_s2026
+conv5,lr 0.0003,0.8993,0.9167,0.9991,1.3141,8.2415,rec_conv5_rlr3e-4_s2026
+conv5,lr 0.001,0.9097,0.9132,0.9991,3.3268,16.5966,rec_conv5_s2026
+conv5,anchored wd 1,0.8924,0.9062,0.9966,1.5052,8.4148,rec_conv5_wd1.0_anchor_s2026
 conv5+fc,frozen,0.9236,0.9375,0.9991,0.0,0.9244,rec_conv5_fc_frozen_s2026
-conv5+fc,lr 3e-05,to run (August),,,,,
-conv5+fc,lr 0.0001,to run (August),,,,,
-conv5+fc,lr 0.0003,to run (August),,,,,
+conv5+fc,lr 3e-05,0.9306,0.9444,0.9991,0.1578,1.9996,rec_conv5_fc_rlr3e-5_s2026
+conv5+fc,lr 0.0001,0.9132,0.9306,0.9991,0.4476,4.1386,rec_conv5_fc_rlr1e-4_s2026
+conv5+fc,lr 0.0003,0.8993,0.9201,0.9991,1.0715,7.6315,rec_conv5_fc_rlr3e-4_s2026
 conv5+fc,lr 0.001,0.8507,0.8646,0.9974,2.5851,18.1065,rec_conv5_fc_s2026
-conv5+fc,anchored wd 1,to run (August),,,,,
+conv5+fc,anchored wd 1,0.9028,0.9132,0.9983,1.1746,8.0664,rec_conv5_fc_wd1.0_anchor_s2026
