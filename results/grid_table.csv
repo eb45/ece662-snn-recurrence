@@ -8,7 +8,7 @@ fc,anchored wd 1,0.8958,0.8993,0.9983,1.26,6.0517,rec_fc_wd1.0_anchor_s2026
 fc,anchored wd 0.3,0.8993,0.9028,0.9974,1.941,8.5486,rec_fc_wd0.3_anchor_s2026
 fc,anchored wd 3,0.9097,0.9306,0.9983,0.6096,3.2796,rec_fc_wd3.0_anchor_s2026
 fc,plain wd 0.1,0.8854,0.9028,0.9906,2.3134,9.8528,rec_fc_wd0.1_s2026
-fc,plain wd 1,to run (August),,,,,
+fc,plain wd 1,0.9271,0.934,0.9983,1.5493,5.7769,rec_fc_wd1.0_s2026
 conv5,frozen,0.9201,0.9375,0.9991,0.0,0.9244,rec_conv5_frozen_s2026
 conv5,lr 3e-05,0.9271,0.934,0.9991,0.2144,1.9356,rec_conv5_rlr3e-5_s2026
 conv5,lr 0.0001,0.9201,0.9306,1.0,0.6102,4.6102,rec_conv5_rlr1e-4_s2026

@@ -58,9 +58,15 @@ submit() {
     sbatch --job-name="$name" --time="$TIME" train_recurrent.sbatch
 }
 
-# submit_control SEED: arm A (feed-forward control) on DVS128.
+# submit_control SEED: arm A (feed-forward control). DVS128 uses train_control.sbatch;
+# DVS-GC uses train_extra.sbatch with the same DATASET, T and DVSGC_ARGS as the
+# recurrent runs, named like Emma's seed-2026 run (dvsgc96u_A_s2026).
 submit_control() {
-  local seed="$1" name="control_s$1"
+  local seed="$1" name="control_s$1" script="train_control.sbatch"
+  if [ -n "$DS_TAG" ]; then
+    name="dvs${DS_TAG%_}_A_s${seed}"
+    script="train_extra.sbatch"
+  fi
   if [ -f "$RUNS_ROOT/$name/final.json" ]; then
     echo "skip   $name (finished)"
     return
@@ -70,7 +76,7 @@ submit_control() {
   [ "${DRY_RUN:-0}" = 1 ] && return
   SEED="$seed" RUN_NAME="$name" OUT="$RUNS_ROOT/$name" \
     DATA_ROOT="${DATA_ROOT:-/work/${USER}/dvs128_gesture}" \
-    sbatch --job-name="$name" --time="$TIME" train_control.sbatch
+    sbatch --job-name="$name" --time="$TIME" "$script"
 }
 
 for seed in $SEEDS; do
