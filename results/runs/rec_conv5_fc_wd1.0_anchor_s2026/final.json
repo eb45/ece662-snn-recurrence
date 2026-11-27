@@ -1,0 +1,96 @@
+{
+  "best_test_acc": 0.9131944444444444,
+  "final_test_acc": 0.9027777777777778,
+  "dataset": "dvs128",
+  "num_classes": 11,
+  "params": 2108526,
+  "total_params": 2108526,
+  "rec_params": 409600,
+  "lif_neurons_per_step": 2794094,
+  "rec_init_stats": {
+    "conv5": {
+      "norm": 5.656854373873805,
+      "drift_abs": 0.0,
+      "drift_rel": 0.0,
+      "cos_to_init": 0.9999999999999587,
+      "spec_norm": 0.9244465452543692,
+      "stable_rank": 2014.0066136414025
+    },
+    "fc": {
+      "norm": 11.313708533142789,
+      "drift_abs": 0.0,
+      "drift_rel": 0.0,
+      "cos_to_init": 0.9999999999999358,
+      "spec_norm": 0.5000004591334888,
+      "radius": 0.5000000242939883,
+      "stable_rank": 511.99906278753633
+    },
+    "all": {
+      "drift_abs": 0.0,
+      "drift_rel": 0.0,
+      "spec_norm_max": 0.9244465452543692
+    }
+  },
+  "rec_final_stats": {
+    "conv5": {
+      "norm": 9.701508638483151,
+      "drift_abs": 7.856881292030851,
+      "drift_rel": 1.3889134796041198,
+      "cos_to_init": 0.5866313986864659,
+      "spec_norm": 8.066363910262314,
+      "stable_rank": 77.36962840474897
+    },
+    "fc": {
+      "norm": 16.984461657177082,
+      "drift_abs": 12.61091604043763,
+      "drift_rel": 1.1146580277806126,
+      "cos_to_init": 0.669859546830274,
+      "spec_norm": 5.662155343869236,
+      "radius": 5.031994778505018,
+      "stable_rank": 8.997876155577694
+    },
+    "all": {
+      "drift_abs": 14.858189223994675,
+      "drift_rel": 1.1746429883371154,
+      "spec_norm_max": 8.066363910262314
+    }
+  },
+  "args": {
+    "dataset": "dvs128",
+    "root": "/hpc/home/ah670/dvs128_gesture",
+    "out": "/work/ah670/ece662_runs/rec_conv5_fc_wd1.0_anchor_s2026",
+    "epochs": 64,
+    "batch_size": 8,
+    "accum": 2,
+    "T": 16,
+    "channels": 128,
+    "opt": "adam",
+    "lr": 0.001,
+    "loss": "mse",
+    "seed": 2026,
+    "num_workers": 4,
+    "no_amp": false,
+    "no_resume": false,
+    "rec_layers": [
+      "conv5",
+      "fc"
+    ],
+    "rec_init": "orthogonal",
+    "rec_gain": 0.5,
+    "freeze_rec": false,
+    "readout": "mean",
+    "late_k": 4,
+    "clip_grad": 0.0,
+    "rec_lr": null,
+    "rec_wd": 1.0,
+    "rec_anchor": true,
+    "seq_len": 4,
+    "class_num": 3,
+    "alpha_min": 0.5,
+    "alpha_max": 0.7,
+    "no_repeat": false,
+    "num_classes": 11,
+    "in_channels": 2,
+    "input_size": 128
+  }
+}

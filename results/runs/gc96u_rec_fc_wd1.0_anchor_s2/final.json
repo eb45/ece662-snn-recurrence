@@ -1,0 +1,79 @@
+{
+  "best_test_acc": 0.8268229166666666,
+  "final_test_acc": 0.8268229166666666,
+  "dataset": "dvsgc",
+  "num_classes": 96,
+  "params": 2397120,
+  "total_params": 2397120,
+  "rec_params": 262144,
+  "lif_neurons_per_step": 2794944,
+  "rec_init_stats": {
+    "fc": {
+      "norm": 11.313708643411044,
+      "drift_abs": 0.0,
+      "drift_rel": 0.0,
+      "cos_to_init": 0.9999999999999352,
+      "spec_norm": 0.5000005827062272,
+      "radius": 0.5000000288704814,
+      "stable_rank": 511.99881969167745
+    },
+    "all": {
+      "drift_abs": 0.0,
+      "drift_rel": 0.0,
+      "spec_norm_max": 0.5000005827062272
+    }
+  },
+  "rec_final_stats": {
+    "fc": {
+      "norm": 17.932569542122053,
+      "drift_abs": 13.722185806692641,
+      "drift_rel": 1.2128813140936119,
+      "cos_to_init": 0.6439118944398294,
+      "spec_norm": 5.616405790580648,
+      "radius": 5.0415090274945085,
+      "stable_rank": 10.194550710556237
+    },
+    "all": {
+      "drift_abs": 13.722185806692641,
+      "drift_rel": 1.2128813140936119,
+      "spec_norm_max": 5.616405790580648
+    }
+  },
+  "args": {
+    "dataset": "dvsgc",
+    "root": "/work/ah670/dvsgc_data",
+    "out": "/work/ah670/ece662_runs/gc96u_rec_fc_wd1.0_anchor_s2",
+    "epochs": 64,
+    "batch_size": 8,
+    "accum": 2,
+    "T": 32,
+    "channels": 128,
+    "opt": "adam",
+    "lr": 0.001,
+    "loss": "mse",
+    "seed": 2,
+    "num_workers": 4,
+    "no_amp": false,
+    "no_resume": false,
+    "rec_layers": [
+      "fc"
+    ],
+    "rec_init": "orthogonal",
+    "rec_gain": 0.5,
+    "freeze_rec": false,
+    "readout": "mean",
+    "late_k": 4,
+    "clip_grad": 0.0,
+    "rec_lr": null,
+    "rec_wd": 1.0,
+    "rec_anchor": true,
+    "seq_len": 6,
+    "class_num": 3,
+    "alpha_min": 0.2,
+    "alpha_max": 1.0,
+    "no_repeat": true,
+    "num_classes": 96,
+    "in_channels": 2,
+    "input_size": 128
+  }
+}

@@ -4,6 +4,7 @@
 #   DRY_RUN=1 bash sweep_recurrent.sh poc    # print what would be submitted
 #   bash sweep_recurrent.sh poc              # seed 2026 only (proof of concept)
 #   bash sweep_recurrent.sh full             # seeds 2026, 1, 2
+#   bash sweep_recurrent.sh seeds            # seeds 1, 2: fc arms B-E + control A
 #
 # Runs whose folder already has final.json are skipped, so the seed-2026 runs
 # you already have (rec_fc_s2026, rec_conv5_fc_s2026, rec_fc_rlr1e-4_s2026,
@@ -16,10 +17,12 @@
 
 set -euo pipefail
 MODE="${1:-poc}"
+EXTRA_SEEDS=""
 case "$MODE" in
-  poc)  SEEDS="2026" ;;
-  full) SEEDS="2026 1 2" ;;
-  *)    echo "usage: bash sweep_recurrent.sh poc|full"; exit 1 ;;
+  poc)   SEEDS="2026" ;;
+  full)  SEEDS="2026 1 2" ;;
+  seeds) SEEDS=""; EXTRA_SEEDS="1 2" ;;
+  *)     echo "usage: bash sweep_recurrent.sh poc|full|seeds"; exit 1 ;;
 esac
 RUNS_ROOT="${RUNS_ROOT:-/work/${USER}/ece662_runs}"
 TIME="${TIME:-02:00:00}"
@@ -55,6 +58,27 @@ submit() {
     sbatch --job-name="$name" --time="$TIME" train_recurrent.sbatch
 }
 
+# submit_control SEED: arm A (feed-forward control). DVS128 uses train_control.sbatch;
+# DVS-GC uses train_extra.sbatch with the same DATASET, T and DVSGC_ARGS as the
+# recurrent runs, named like Emma's seed-2026 run (dvsgc96u_A_s2026).
+submit_control() {
+  local seed="$1" name="control_s$1" script="train_control.sbatch"
+  if [ -n "$DS_TAG" ]; then
+    name="dvs${DS_TAG%_}_A_s${seed}"
+    script="train_extra.sbatch"
+  fi
+  if [ -f "$RUNS_ROOT/$name/final.json" ]; then
+    echo "skip   $name (finished)"
+    return
+  fi
+  echo "submit $name"
+  n_submit=$((n_submit + 1))
+  [ "${DRY_RUN:-0}" = 1 ] && return
+  SEED="$seed" RUN_NAME="$name" OUT="$RUNS_ROOT/$name" \
+    DATA_ROOT="${DATA_ROOT:-/work/${USER}/dvs128_gesture}" \
+    sbatch --job-name="$name" --time="$TIME" "$script"
+}
+
 for seed in $SEEDS; do
   for layers in "fc" "conv5" "conv5 fc"; do
     # Frozen random W_rec: the zero-drift end of every curve.
@@ -72,7 +96,18 @@ for seed in $SEEDS; do
     submit "fc" "$seed" 0 "" "$wd" 1
   done
   submit "fc" "$seed" 0 "" 1.0 0
+  submit "conv5" "$seed" 0 "" 1.0 1
   submit "conv5 fc" "$seed" 0 "" 1.0 1
+done
+
+# Extra seeds for the paper arms only: fc B (frozen), C (lr 1e-3), D (lr 1e-4),
+# E (anchored wd 1), plus control A. The grid table is seed 2026 only.
+for seed in $EXTRA_SEEDS; do
+  submit "fc" "$seed" 1 "" 0 0
+  submit "fc" "$seed" 0 "" 0 0
+  submit "fc" "$seed" 0 1e-4 0 0
+  submit "fc" "$seed" 0 "" 1.0 1
+  submit_control "$seed"
 done
 
 echo "$n_submit job(s) $([ "${DRY_RUN:-0}" = 1 ] && echo 'would be ' || true)submitted"

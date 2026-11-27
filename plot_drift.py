@@ -7,6 +7,8 @@ Collects every recurrent run under --runs-dir and writes
   - <out>.png : (a) final test accuracy vs relative drift ||W - W0|| / ||W0||
                 (b) final test accuracy vs spectral norm of W_rec (max over layers)
     colour = placement, marker = condition (lr grid, decay toward 0, anchored, frozen)
+  - <lr-out>.png : final test accuracy vs W_rec learning rate, one line per placement,
+                   mean +/- std over seeds, frozen as a separate point (DVS128, 64-epoch runs)
 
 Drift comes from the last row of metrics.jsonl (runs trained with drift logging)
 or from drift.json (older runs; make it with `python rec_drift.py <runs>`).
@@ -40,7 +42,7 @@ INK, INK_2, GRID, AXIS = "#0b0b0b", "#52514e", "#e1e0d9", "#c3c2b7"
 def condition(a: dict) -> str:
     if a["freeze_rec"]:
         return "frozen"
-    if a.get("rec_wd", 0) > 0:
+    if (a.get("rec_wd") or 0) > 0:
         return "anchored" if a.get("rec_anchor") else "decay to 0"
     return "lr grid"
 
@@ -71,8 +73,11 @@ def collect(runs_dir: str) -> list:
             "placement": "+".join(a["rec_layers"]),
             "condition": condition(a),
             "seed": a["seed"],
+            "dataset": a.get("dataset", "dvs128"),
+            "epochs_planned": a.get("epochs"),
+            "epochs_done": len(metrics),
             "rec_lr": a.get("rec_lr") or a["lr"],  # old runs predate --rec-lr
-            "rec_wd": a.get("rec_wd", 0.0),
+            "rec_wd": a.get("rec_wd") or 0.0,
             "readout": a["readout"],
             "init": f"{a['rec_init']}x{a['rec_gain']}",
             "main_setting": main_setting,
@@ -169,11 +174,101 @@ def plot(rows: list, control_acc, out: str) -> None:
     print(f"Saved {out}")
 
 
+def lr_curves(rows: list, dataset: str = "dvs128", min_epochs: int = 64) -> dict:
+    """Final test accuracy vs W_rec lr, one curve per placement.
+
+    Keeps finished main-setting runs of one dataset that are either in the lr grid
+    (no weight decay) or frozen. Returns
+      {placement: {"lr": [(rec_lr, mean %, std %, n), ...] sorted by lr,
+                   "frozen": (mean %, std %, n) or None}}
+    with mean and std over seeds (std 0 for a single seed).
+    """
+    groups = defaultdict(list)
+    for r in rows:
+        if not (r["main_setting"] and r.get("dataset", "dvs128") == dataset
+                and (r.get("epochs_done") or 0) >= min_epochs
+                and r["condition"] in ("lr grid", "frozen")):
+            continue
+        key = "frozen" if r["condition"] == "frozen" else r["rec_lr"]
+        groups[(r["placement"], key)].append(100 * r["final_test_acc"])
+
+    def stats(accs):
+        return (statistics.mean(accs), statistics.stdev(accs) if len(accs) > 1 else 0.0, len(accs))
+
+    out = {}
+    for (place, key), accs in groups.items():
+        c = out.setdefault(place, {"lr": [], "frozen": None})
+        if key == "frozen":
+            c["frozen"] = stats(accs)
+        else:
+            c["lr"].append((key,) + stats(accs))
+    for c in out.values():
+        c["lr"].sort()
+    return out
+
+
+def plot_lr(rows: list, control_acc, out: str) -> None:
+    """Accuracy vs W_rec learning rate (log x), one line per placement, mean +/- std over seeds.
+
+    Frozen W_rec (lr 0) cannot sit on a log axis, so it is drawn as an unconnected
+    point at a separate "frozen" tick left of the grid.
+    """
+    curves = lr_curves(rows)
+    if not curves:
+        print("\nno finished DVS128 lr-grid runs; skipping the lr plot")
+        return
+    lrs = sorted({p[0] for c in curves.values() for p in c["lr"]})
+    x_frozen = (lrs[0] if lrs else 1e-4) / 3.5
+
+    plt.rcParams.update({"font.size": 7, "axes.labelcolor": INK, "text.color": INK,
+                         "axes.titlesize": 7.5, "legend.fontsize": 6.5})
+    fig, ax = plt.subplots(figsize=(3.33, 2.4), constrained_layout=True)
+    order = [p for p in PLACEMENT_COLORS if p in curves] + sorted(set(curves) - set(PLACEMENT_COLORS))
+    for i, place in enumerate(order):
+        c, color = curves[place], PLACEMENT_COLORS.get(place, INK_2)
+        nudge = 1.06 ** (i - (len(order) - 1) / 2)  # keep overlapping error bars apart
+        if c["lr"]:
+            x = [p[0] * nudge for p in c["lr"]]
+            ax.errorbar(x, [p[1] for p in c["lr"]], yerr=[p[2] for p in c["lr"]],
+                        color=color, marker="o", markersize=4, linewidth=1.2, capsize=2,
+                        elinewidth=0.8, markeredgecolor="white", markeredgewidth=0.5,
+                        label=place, zorder=3)
+        if c["frozen"]:
+            m, sd, _ = c["frozen"]
+            ax.errorbar([x_frozen * nudge], [m], yerr=[sd], color=color,
+                        marker=CONDITION_MARKERS["frozen"], markersize=4, linestyle="",
+                        capsize=2, elinewidth=0.8, markeredgecolor="white",
+                        markeredgewidth=0.5, label=None if c["lr"] else place, zorder=3)
+    if control_acc is not None:
+        ax.axhline(control_acc, color=INK_2, linewidth=0.8, linestyle=(0, (3, 2)), zorder=2)
+        ax.annotate("control", xy=(1, control_acc), xycoords=("axes fraction", "data"),
+                    xytext=(-2, 2), textcoords="offset points", ha="right", va="bottom",
+                    color=INK_2, fontsize=6.5)
+
+    ax.set_xscale("log")
+    ticks = [x_frozen] + lrs
+    ax.set_xticks(ticks)
+    ax.set_xticklabels(["frozen"] + [f"{lr:g}" for lr in lrs])
+    ax.minorticks_off()
+    ax.set_xlim(x_frozen / 1.8, (lrs[-1] if lrs else x_frozen) * 1.8)
+    style_axes(ax)
+    ax.set_xlabel(r"$W_{\mathrm{rec}}$ learning rate (network lr $10^{-3}$)")
+    ax.set_ylabel("Final test accuracy (%, mean ± std)")
+    ax.set_title("Accuracy vs. $W_{\\mathrm{rec}}$ learning rate (DVS128)", loc="left")
+    ax.legend(frameon=False, loc="lower left", handletextpad=0.4)
+
+    os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
+    fig.savefig(out, dpi=300, facecolor="white")
+    print(f"Saved {out}")
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--runs-dir", default="/work/ah670/ece662_runs")
     p.add_argument("--control", help="Folder with the control's metrics.jsonl (dashed line)")
     p.add_argument("--out", default="figs/drift_vs_acc.png")
+    p.add_argument("--lr-out", default="figs/acc_vs_rec_lr.png",
+                   help="Accuracy vs W_rec learning rate, one line per placement")
     args = p.parse_args()
 
     rows = collect(args.runs_dir)
@@ -186,8 +281,12 @@ def main():
         w.writeheader()
         w.writerows(rows)
     print(f"Wrote {csv_path} ({len(rows)} runs)")
-    print_table(rows)
-    plot(rows, control_final_acc(args.control), args.out)
+    # The CSV lists everything; the table and plots skip debug and unfinished runs.
+    full = [r for r in rows if r["epochs_done"] >= 64]
+    print_table(full)
+    control_acc = control_final_acc(args.control)
+    plot(full, control_acc, args.out)
+    plot_lr(rows, control_acc, args.lr_out)
 
 
 if __name__ == "__main__":

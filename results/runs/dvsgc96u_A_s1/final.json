@@ -1,0 +1,31 @@
+{
+  "best_test_acc": 0.5972222222222222,
+  "dataset": "dvsgc",
+  "num_classes": 96,
+  "params": 2134976,
+  "lif_neurons_per_step": 2794944,
+  "args": {
+    "dataset": "dvsgc",
+    "root": "/work/ah670/dvsgc_data",
+    "out": "/work/ah670/ece662_runs/dvsgc96u_A_s1",
+    "epochs": 64,
+    "batch_size": 8,
+    "accum": 2,
+    "T": 32,
+    "channels": 128,
+    "opt": "adam",
+    "lr": 0.001,
+    "loss": "mse",
+    "seed": 1,
+    "num_workers": 4,
+    "no_amp": false,
+    "cupy": false,
+    "neuron": "lif",
+    "no_resume": false,
+    "seq_len": 6,
+    "class_num": 3,
+    "alpha_min": 0.2,
+    "alpha_max": 1.0,
+    "no_repeat": true
+  }
+}
