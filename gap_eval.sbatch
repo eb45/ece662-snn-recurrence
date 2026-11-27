@@ -19,7 +19,13 @@
 
 VENV="${VENV:-/hpc/group/naderilab/eb408/peft_proteomics/peft_proteomics_env}"
 cd "$SLURM_SUBMIT_DIR" || exit 1
-source "$VENV/bin/activate" || { echo "could not activate $VENV"; exit 1; }
+if [ -n "${CONDA_ENV:-}" ]; then
+  # sbatch inherits PATH from the submitting shell, so conda is found if it works there.
+  source "$(conda info --base)/etc/profile.d/conda.sh" || { echo "conda not found"; exit 1; }
+  conda activate "$CONDA_ENV" || exit 1
+else
+  source "$VENV/bin/activate" || { echo "could not activate $VENV"; exit 1; }
+fi
 mkdir -p logs
 
 todo=()
