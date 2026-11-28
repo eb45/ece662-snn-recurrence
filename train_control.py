@@ -54,6 +54,8 @@ def parse_args():
     p.add_argument("--cupy", action="store_true", help="Use the cupy LIF backend (needs cupy installed)")
     p.add_argument("--neuron", choices=NEURONS, default="lif",
                    help="lif (default, tau 2) or if (no leak), for the neuron check")
+    p.add_argument("--tau", type=float, default=2.0,
+                   help="LIF time constant. 2 is the tutorial default; larger leaks slower (longer memory)")
     p.add_argument("--no-resume", action="store_true")
     # DVS-Gesture-Chain options (ignored for dvs128)
     p.add_argument("--seq-len", type=int, default=DVSGC_DEFAULTS["seq_len"])
@@ -96,7 +98,8 @@ def main():
     in_channels, input_size, _ = info["frame_shape"]
 
     model = CSNN(channels=args.channels, num_classes=num_classes,
-                 in_channels=in_channels, input_size=input_size, neuron=args.neuron).to(device)
+                 in_channels=in_channels, input_size=input_size, neuron=args.neuron,
+                 tau=args.tau).to(device)
     if args.cupy:
         functional.set_backend(model, "cupy", instance=(neuron.IFNode if args.neuron == "if" else neuron.LIFNode))
 

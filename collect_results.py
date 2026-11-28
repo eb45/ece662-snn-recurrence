@@ -74,8 +74,12 @@ def describe(args):
     layers = args.get("rec_layers")
     if not layers:
         neuron = args.get("neuron", "lif")
-        return ("control" if neuron == "lif" else f"control-{neuron}"), "", "", \
-               ("A" if neuron == "lif" else "")
+        tau = args.get("tau", 2.0)
+        model = "control" if neuron == "lif" else f"control-{neuron}"
+        if neuron == "lif" and tau != 2.0:
+            # Off-default leak stays out of arm A so it never mixes with the tau 2 seeds.
+            return f"control-tau{tau:g}", "", "", ""
+        return model, "", "", ("A" if neuron == "lif" else "")
     place = "+".join(layers)
     lr, wd, anchor = args.get("rec_lr"), args.get("rec_wd", 0.0) or 0.0, args.get("rec_anchor", False)
     if args.get("freeze_rec"):
